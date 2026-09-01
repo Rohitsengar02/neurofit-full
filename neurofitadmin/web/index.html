@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeuroFit Admin HQ - Command Center</title>
+  <meta name="description" content="NeuroFit Admin HQ - Real-time command center, analytics, marketplace & subscriptions management.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="NeuroFit Admin">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="manifest" href="manifest.json">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    const serviceWorkerVersion = null;
+  </script>
+  <script src="flutter.js" defer></script>
+
+  <style>
+    :root {
+      --primary: #6366F1;
+      --emerald: #10B981;
+      --bg: #0B0F19;
+      --surface: #111827;
+      --surface-border: rgba(255, 255, 255, 0.08);
+      --text: #F8FAFC;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* Admin App Loading Screen */
+    #flutter-loading {
+      position: fixed;
+      inset: 0;
+      background: #030712;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .admin-logo {
+      width: 76px;
+      height: 76px;
+      background: linear-gradient(135deg, #6366F1, #10B981);
+      border-radius: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 35px rgba(99, 102, 241, 0.45);
+      margin-bottom: 20px;
+      animation: adminPulse 2s infinite;
+    }
+    .admin-logo svg {
+      width: 40px;
+      height: 40px;
+      fill: white;
+    }
+    @keyframes adminPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 35px rgba(99, 102, 241, 0.45); }
+      50% { transform: scale(1.04); box-shadow: 0 0 50px rgba(16, 185, 129, 0.6); }
+    }
+    .admin-spinner {
+      width: 36px;
+      height: 36px;
+      border: 3.5px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #6366F1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-top: 18px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Splash Screen -->
+  <div id="flutter-loading">
+    <div class="admin-logo">
+      <svg viewBox="0 0 24 24"><path d="M20.57 14.86L22 13.43L20.57 12L17 15.57L8.43 7L12 3.43L10.57 2L9.14 3.43L7.71 2L5.57 4.14L4.14 2.71L2.71 4.14L4.14 5.57L2 7.71L3.43 9.14L2 10.57L3.43 12L7 8.43L15.57 17L12 20.57L13.43 22L14.86 20.57L16.29 22L18.43 19.86L19.86 21.29L21.29 19.86L19.86 18.43L22 16.29L20.57 14.86Z"/></svg>
+    </div>
+    <div style="font-size: 19px; font-weight: 900; color: white; letter-spacing: 0.8px;">NEUROFIT ADMIN HQ</div>
+    <div style="font-size: 12px; color: #94A3B8; margin-top: 4px; font-weight: 600;">Booting Real Admin Panel...</div>
+    <div class="admin-spinner"></div>
+  </div>
+
+  <script>
+    let isFlutterStarted = false;
+
+    function launchAdminFlutterApp() {
+      if (isFlutterStarted) return;
+      isFlutterStarted = true;
+
+      function initEngine() {
+        if (window._flutter && window._flutter.loader) {
+          window._flutter.loader.loadEntrypoint({
+            serviceWorker: {
+              serviceWorkerVersion: serviceWorkerVersion,
+            },
+            onEntrypointLoaded: function(engineInitializer) {
+              engineInitializer.initializeEngine().then(function(appRunner) {
+                const loader = document.getElementById('flutter-loading');
+                if (loader) loader.style.display = 'none';
+                appRunner.runApp();
+              });
+            }
+          });
+        }
+      }
+
+      if (window._flutter && window._flutter.loader) {
+        initEngine();
+      } else {
+        window.addEventListener('load', initEngine);
+      }
+    }
+
+    // Auto-launch the Real Flutter Admin App immediately on localhost and all browsers!
+    window.addEventListener('DOMContentLoaded', launchAdminFlutterApp);
+    launchAdminFlutterApp();
+  </script>
+</body>
+</html>
