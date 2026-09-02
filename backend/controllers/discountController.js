@@ -42,6 +42,8 @@ exports.createOrUpdateDiscount = async (req, res) => {
       { ...req.body, discountId: discId },
       { new: true, upsert: true }
     );
+    req.app.get('io')?.emit('discount_updated', discount);
+    req.app.get('io')?.emit('discounts_updated', discount);
     res.json({ success: true, data: discount });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -52,6 +54,8 @@ exports.deleteDiscount = async (req, res) => {
   try {
     const discId = req.params.id;
     await Discount.findOneAndDelete({ $or: [{ discountId: discId }, { id: discId }] });
+    req.app.get('io')?.emit('discount_deleted', { discountId: discId });
+    req.app.get('io')?.emit('discounts_updated', { discountId: discId });
     res.json({ success: true, message: 'Discount deleted successfully from MongoDB Atlas' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

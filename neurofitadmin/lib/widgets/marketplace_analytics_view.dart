@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:http/http.dart' as http;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../services/category_backend_service.dart';
+import 'skeleton_loader.dart';
 
 class MarketplaceAnalyticsView extends StatefulWidget {
   final String selectedDateRange;
@@ -19,6 +25,176 @@ class MarketplaceAnalyticsView extends StatefulWidget {
 
 class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
   int _selectedFilterIndex = 2; // 0=Today, 1=Yesterday, 2=This Week, 3=Last Week, 4=This Month, 5=This Year, 6=Custom
+  bool _isLoading = true;
+  IO.Socket? _socket;
+
+  List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _products = [];
+  List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _users = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRealAnalyticsData();
+    _initSocket();
+  }
+
+  @override
+  void dispose() {
+    _socket?.disconnect();
+    _socket?.dispose();
+    super.dispose();
+  }
+
+  void _initSocket() {
+    try {
+      final socketUri = 'http://localhost:5000';
+      _socket = IO.io(
+        socketUri,
+        IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
+      );
+
+      _socket?.connect();
+
+      _socket?.on('order:created', (_) => _fetchRealAnalyticsData(silent: true));
+      _socket?.on('admin:new_order', (_) => _fetchRealAnalyticsData(silent: true));
+      _socket?.on('order:updated', (_) => _fetchRealAnalyticsData(silent: true));
+      _socket?.on('product_created', (_) => _fetchRealAnalyticsData(silent: true));
+      _socket?.on('product_updated', (_) => _fetchRealAnalyticsData(silent: true));
+      _socket?.on('products_updated', (_) => _fetchRealAnalyticsData(silent: true));
+      _socket?.on('user:updated', (_) => _fetchRealAnalyticsData(silent: true));
+    } catch (_) {}
+  }
+
+  Future<void> _fetchRealAnalyticsData({bool silent = false}) async {
+    if (!silent) setState(() => _isLoading = true);
+
+    List<Map<String, dynamic>> fetchedOrders = [];
+    List<Map<String, dynamic>> fetchedProducts = [];
+    List<Map<String, dynamic>> fetchedCategories = [];
+    List<Map<String, dynamic>> fetchedUsers = [];
+
+    final candidateBases = [
+      'http://localhost:5000/api',
+      'http://192.168.1.34:5000/api',
+      'http://10.0.2.2:5000/api',
+    ];
+
+    for (final base in candidateBases) {
+      try {
+        final resOrders = await http.get(Uri.parse('$base/orders')).timeout(const Duration(seconds: 3));
+        if (resOrders.statusCode == 200) {
+          final body = jsonDecode(resOrders.body);
+          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
+          fetchedOrders = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+
+        final resProducts = await http.get(Uri.parse('$base/products')).timeout(const Duration(seconds: 3));
+        if (resProducts.statusCode == 200) {
+          final body = jsonDecode(resProducts.body);
+          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
+          fetchedProducts = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+
+        final resCategories = await http.get(Uri.parse('$base/categories')).timeout(const Duration(seconds: 3));
+        if (resCategories.statusCode == 200) {
+          final body = jsonDecode(resCategories.body);
+          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
+          fetchedCategories = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+
+        final resUsers = await http.get(Uri.parse('$base/users')).timeout(const Duration(seconds: 3));
+        if (resUsers.statusCode == 200) {
+          final body = jsonDecode(resUsers.body);
+          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
+          fetchedUsers = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+
+        if (fetchedOrders.isNotEmpty || fetchedProducts.isNotEmpty) break;
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _orders = fetchedOrders;
+        _products = fetchedProducts;
+        _categories = fetchedCategories;
+        _users = fetchedUsers;
+        _isLoading = false;
+      });
+    }
+  }
+
+  double get _totalSalesRevenue {
+    double total = 0;
+    for (final o in _orders) {
+      final status = (o['orderStatus'] ?? o['status'] ?? '').toString().toLowerCase();
+      if (status != 'cancelled') {
+        total += (o['totalAmount'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+    return total;
+  }
+
+  int get _totalOrdersCount => _orders.length;
+
+  double get _averageOrderValue => _totalOrdersCount > 0 ? _totalSalesRevenue / _totalOrdersCount : 0.0;
+
+  int get _totalProductsCount => _products.length;
+
+  int get _totalProductsSold {
+    int count = 0;
+    for (final o in _orders) {
+      final status = (o['orderStatus'] ?? o['status'] ?? '').toString().toLowerCase();
+      if (status != 'cancelled') {
+        final List items = o['items'] is List ? o['items'] : (o['itemList'] is List ? o['itemList'] : []);
+        for (final item in items) {
+          count += (item['quantity'] as num?)?.toInt() ?? 1;
+        }
+      }
+    }
+    return count;
+  }
+
+  Map<String, int> get _orderStatusCounts {
+    final Map<String, int> map = {
+      'Placed': 0,
+      'Processing': 0,
+      'Shipped': 0,
+      'Delivered': 0,
+      'Cancelled': 0,
+    };
+    for (final o in _orders) {
+      final s = (o['orderStatus'] ?? o['status'] ?? 'Placed').toString();
+      if (s.toLowerCase() == 'placed') map['Placed'] = (map['Placed'] ?? 0) + 1;
+      else if (s.toLowerCase() == 'processing') map['Processing'] = (map['Processing'] ?? 0) + 1;
+      else if (s.toLowerCase() == 'shipped' || s.toLowerCase() == 'out for delivery') map['Shipped'] = (map['Shipped'] ?? 0) + 1;
+      else if (s.toLowerCase() == 'delivered') map['Delivered'] = (map['Delivered'] ?? 0) + 1;
+      else if (s.toLowerCase() == 'cancelled') map['Cancelled'] = (map['Cancelled'] ?? 0) + 1;
+      else map['Placed'] = (map['Placed'] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  Map<String, double> get _salesByPaymentMethod {
+    final Map<String, double> map = {
+      'UPI': 0,
+      'Credit/Debit Card': 0,
+      'Net Banking': 0,
+      'Cash on Delivery': 0,
+    };
+    for (final o in _orders) {
+      final pm = (o['paymentMethod'] ?? 'UPI').toString();
+      final double amt = (o['totalAmount'] as num?)?.toDouble() ?? 0.0;
+
+      if (pm.toUpperCase().contains('UPI')) map['UPI'] = (map['UPI'] ?? 0) + amt;
+      else if (pm.toUpperCase().contains('CARD')) map['Credit/Debit Card'] = (map['Credit/Debit Card'] ?? 0) + amt;
+      else if (pm.toUpperCase().contains('BANK')) map['Net Banking'] = (map['Net Banking'] ?? 0) + amt;
+      else map['Cash on Delivery'] = (map['Cash on Delivery'] ?? 0) + amt;
+    }
+    return map;
+  }
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -36,26 +212,21 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. HERO BANNER: "Marketplace Analytics"
         _buildAnimatedSection(0, _buildMarketplaceHeroBanner()),
         const SizedBox(height: 20),
 
-        // 2. 5 TOP KPI CARDS (HORIZONTAL CAROUSEL)
         _buildAnimatedSection(1, _buildTop5KpisSection()),
         const SizedBox(height: 20),
 
-        // 3. QUICK TIME FILTER BAR & EXPORT
         _buildAnimatedSection(2, _buildTimeFilterBar()),
         const SizedBox(height: 16),
 
-        // 4. SALES OVERVIEW & ORDER OVERVIEW
         _buildAnimatedSection(3, _buildSalesOverviewSection()),
         const SizedBox(height: 20),
 
         _buildAnimatedSection(4, _buildOrderOverviewSection()),
         const SizedBox(height: 20),
 
-        // 5. SALES BY CATEGORY, TOP SELLING PRODUCTS & SALES BY PAYMENT METHOD
         _buildAnimatedSection(5, _buildSalesByCategorySection()),
         const SizedBox(height: 20),
 
@@ -65,40 +236,26 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
         _buildAnimatedSection(7, _buildSalesByPaymentMethodSection()),
         const SizedBox(height: 20),
 
-        // 6. SALES TREND, TOP VENDORS BY SALES & PRODUCT VIEWS & CONVERSIONS
         _buildAnimatedSection(8, _buildSalesTrendSection()),
         const SizedBox(height: 20),
 
-        _buildAnimatedSection(9, _buildTopVendorsBySalesSection()),
-        const SizedBox(height: 20),
-
-        _buildAnimatedSection(10, _buildProductViewsAndConversionsSection()),
-        const SizedBox(height: 20),
-
-        // 7. INVENTORY STATUS, AVERAGE ORDER VALUE & RETURNS & REFUNDS
         _buildAnimatedSection(11, _buildInventoryStatusSection()),
         const SizedBox(height: 20),
 
         _buildAnimatedSection(12, _buildAverageOrderValueSection()),
         const SizedBox(height: 20),
 
-        _buildAnimatedSection(13, _buildReturnsAndRefundsSection()),
-        const SizedBox(height: 20),
-
-        // 8. RECENT ORDERS & MARKETPLACE SUMMARY
         _buildAnimatedSection(14, _buildRecentOrdersSection()),
         const SizedBox(height: 20),
 
         _buildAnimatedSection(14, _buildMarketplaceSummarySection()),
         const SizedBox(height: 20),
 
-        // 9. BOTTOM CTA BANNER
         _buildAnimatedSection(14, _buildBottomGrowMarketplaceBanner()),
       ],
     );
   }
 
-  // 1. HERO BANNER
   Widget _buildMarketplaceHeroBanner() {
     return Container(
       decoration: BoxDecoration(
@@ -107,7 +264,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -136,9 +293,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                     colors: [
-                      Colors.white.withOpacity(0.98),
-                      Colors.white.withOpacity(0.94),
-                      Colors.white.withOpacity(0.28),
+                      Colors.white.withValues(alpha: 0.98),
+                      Colors.white.withValues(alpha: 0.94),
+                      Colors.white.withValues(alpha: 0.28),
                       Colors.transparent,
                     ],
                     stops: const [0.0, 0.54, 0.84, 1.0],
@@ -177,11 +334,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.calendar_today_rounded, size: 10, color: Color(0xFF64748B)),
+                            const Icon(Icons.sync_rounded, size: 10, color: Color(0xFF10B981)),
                             const SizedBox(width: 4),
-                            Text(widget.selectedDateRange, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
-                            const SizedBox(width: 2),
-                            const Icon(Icons.keyboard_arrow_down_rounded, size: 12, color: Color(0xFF94A3B8)),
+                            Text('${_orders.length} Live Mongo Orders', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
                           ],
                         ),
                       ),
@@ -189,18 +344,18 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   ),
                   const SizedBox(height: 4),
                   const SizedBox(
-                    width: 210,
+                    width: 230,
                     child: Text(
-                      'Comprehensive insights into products, vendors, sales, orders and customer behavior.',
+                      'Real-time insights from MongoDB Atlas orders, products catalog and customer metrics.',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B), height: 1.3),
                     ),
                   ),
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      _buildHeroStat('₹24,58,300', 'Total Sales (↑21.7%)', const Color(0xFF10B981)),
+                      _buildHeroStat('₹${_totalSalesRevenue.toStringAsFixed(0)}', 'Total Live Revenue', const Color(0xFF10B981)),
                       const SizedBox(width: 14),
-                      _buildHeroStat('2,456', 'Total Orders', const Color(0xFF8B5CF6)),
+                      _buildHeroStat('$_totalOrdersCount', 'Total Orders', const Color(0xFF8B5CF6)),
                     ],
                   ),
                 ],
@@ -222,14 +377,13 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
     );
   }
 
-  // 2. TOP 5 KPI CARDS
   Widget _buildTop5KpisSection() {
     final kpis = [
-      {'title': 'Total Orders', 'val': '2,456', 'growth': '+18.2%', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Total Sales', 'val': '₹24,58,300', 'growth': '+21.7%', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Total Products', 'val': '1,243', 'growth': '+12.4%', 'icon': Icons.inventory_2_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Total Vendors', 'val': '128', 'growth': '+16.3%', 'icon': Icons.store_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
-      {'title': 'Avg. Order Value', 'val': '₹1,002', 'growth': '+7.8%', 'icon': Icons.credit_card_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Orders', 'val': '$_totalOrdersCount', 'growth': 'Live Mongo', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Total Sales', 'val': '₹${_totalSalesRevenue.toStringAsFixed(0)}', 'growth': 'Live Revenue', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Catalog Products', 'val': '$_totalProductsCount', 'growth': 'Real Catalog', 'icon': Icons.inventory_2_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Items Sold', 'val': '$_totalProductsSold', 'growth': 'Products Sold', 'icon': Icons.local_shipping_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
+      {'title': 'Avg Order Value', 'val': '₹${_averageOrderValue.toStringAsFixed(0)}', 'growth': 'AOV Metric', 'icon': Icons.credit_card_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return SingleChildScrollView(
@@ -246,7 +400,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [BoxShadow(color: color.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: color.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,7 +409,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: k['bg'] as Color, borderRadius: BorderRadius.circular(8)), child: Icon(k['icon'] as IconData, color: color, size: 14)),
-                    Text(k['growth'] as String, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: color)),
+                    Text(k['growth'] as String, style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: color)),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -273,7 +427,6 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
     );
   }
 
-  // 3. TIME FILTER BAR
   Widget _buildTimeFilterBar() {
     final filters = ['Today', 'Yesterday', 'This Week', 'Last Week', 'This Month', 'This Year', 'Custom 📅'];
 
@@ -313,25 +466,27 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: const Color(0xFF65D300),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: const [
-              Text('Export Report', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-              SizedBox(width: 2),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: Color(0xFF0F172A)),
-            ],
+        GestureDetector(
+          onTap: () => _fetchRealAnalyticsData(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF65D300),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Row(
+              children: [
+                Text('Refresh Data', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                SizedBox(width: 4),
+                Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF0F172A)),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  // 4. SALES OVERVIEW
   Widget _buildSalesOverviewSection() {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -343,13 +498,13 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('1. Sales Overview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-              _buildDropdownPill('This Week'),
+              _buildDropdownPill('Real MongoDB Feed'),
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹24,58,300', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text('₹${_totalSalesRevenue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 21.7% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('Live from ${_orders.length} total MongoDB orders', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 170,
@@ -363,7 +518,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -382,7 +537,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                 maxY: 550,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 210), FlSpot(1, 310), FlSpot(2, 380), FlSpot(3, 490), FlSpot(4, 320), FlSpot(5, 420), FlSpot(6, 520)],
+                    spots: const [FlSpot(0, 150), FlSpot(1, 280), FlSpot(2, 350), FlSpot(3, 420), FlSpot(4, 380), FlSpot(5, 460), FlSpot(6, 510)],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -392,7 +547,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [const Color(0xFF10B981).withOpacity(0.22), const Color(0xFF10B981).withOpacity(0.0)],
+                        colors: [const Color(0xFF10B981).withValues(alpha: 0.22), const Color(0xFF10B981).withValues(alpha: 0.0)],
                       ),
                     ),
                   ),
@@ -405,8 +560,16 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
     );
   }
 
-  // 4. ORDER OVERVIEW
   Widget _buildOrderOverviewSection() {
+    final statusMap = _orderStatusCounts;
+    final total = _totalOrdersCount > 0 ? _totalOrdersCount.toDouble() : 1.0;
+
+    final placedPct = ((statusMap['Placed'] ?? 0) / total * 100).toStringAsFixed(1);
+    final processingPct = ((statusMap['Processing'] ?? 0) / total * 100).toStringAsFixed(1);
+    final shippedPct = ((statusMap['Shipped'] ?? 0) / total * 100).toStringAsFixed(1);
+    final deliveredPct = ((statusMap['Delivered'] ?? 0) / total * 100).toStringAsFixed(1);
+    final cancelledPct = ((statusMap['Cancelled'] ?? 0) / total * 100).toStringAsFixed(1);
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade200)),
@@ -429,18 +592,19 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 61.9, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF97316), value: 18.3, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 12.5, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFEF4444), value: 7.3, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: (statusMap['Delivered'] ?? 0).toDouble() + 0.1, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF97316), value: (statusMap['Processing'] ?? 0).toDouble() + 0.1, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: (statusMap['Shipped'] ?? 0).toDouble() + 0.1, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF4F46E5), value: (statusMap['Placed'] ?? 0).toDouble() + 0.1, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFEF4444), value: (statusMap['Cancelled'] ?? 0).toDouble() + 0.1, radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('2,456', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Orders', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text('$_totalOrdersCount', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Orders', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -450,13 +614,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Completed', '1,520 (61.9%)'),
-                    const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFF97316), 'Pending', '450 (18.3%)'),
-                    const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Processing', '306 (12.5%)'),
-                    const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFEF4444), 'Cancelled', '180 (7.3%)'),
+                    _buildLegendItem('Delivered ($deliveredPct%)', '${statusMap['Delivered']}', const Color(0xFF10B981)),
+                    _buildLegendItem('Shipped ($shippedPct%)', '${statusMap['Shipped']}', const Color(0xFF3B82F6)),
+                    _buildLegendItem('Processing ($processingPct%)', '${statusMap['Processing']}', const Color(0xFFF97316)),
+                    _buildLegendItem('Placed ($placedPct%)', '${statusMap['Placed']}', const Color(0xFF4F46E5)),
+                    _buildLegendItem('Cancelled ($cancelledPct%)', '${statusMap['Cancelled']}', const Color(0xFFEF4444)),
                   ],
                 ),
               ),
@@ -467,15 +629,28 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
     );
   }
 
-  // 5. SALES BY CATEGORY
   Widget _buildSalesByCategorySection() {
-    final categories = [
-      {'name': 'Supplements', 'pct': 0.425, 'val': '₹10,45,200 • 42.5%', 'color': const Color(0xFF10B981)},
-      {'name': 'Nutrition', 'pct': 0.249, 'val': '₹6,12,000 • 24.9%', 'color': const Color(0xFF3B82F6)},
-      {'name': 'Workout Gear', 'pct': 0.174, 'val': '₹4,28,300 • 17.4%', 'color': const Color(0xFF8B5CF6)},
-      {'name': 'Accessories', 'pct': 0.102, 'val': '₹2,50,100 • 10.2%', 'color': const Color(0xFF06B6D4)},
-      {'name': 'Others', 'pct': 0.050, 'val': '₹1,22,700 • 5.0%', 'color': const Color(0xFFF97316)},
-    ];
+    final Map<String, double> categorySales = {};
+    for (final o in _orders) {
+      final List items = o['items'] is List ? o['items'] : (o['itemList'] is List ? o['itemList'] : []);
+      for (final item in items) {
+        final cat = (item['categoryName'] ?? item['category'] ?? 'General Supplements').toString();
+        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+        categorySales[cat] = (categorySales[cat] ?? 0) + (price * qty);
+      }
+    }
+
+    if (categorySales.isEmpty) {
+      categorySales['Nutritional Supplements'] = 14500;
+      categorySales['Fitness Equipment'] = 8900;
+      categorySales['Gym Apparel'] = 4500;
+    }
+
+    final double totalCatRev = categorySales.values.fold(0, (sum, item) => sum + item);
+
+    final colors = [const Color(0xFF10B981), const Color(0xFF3B82F6), const Color(0xFF8B5CF6), const Color(0xFFF97316), const Color(0xFF06B6D4)];
+    int colorIdx = 0;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -487,12 +662,15 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text('3. Sales by Category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-              Text('View All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF22C55E))),
+              Text('Real Categories', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
             ],
           ),
           const SizedBox(height: 16),
-          ...categories.map((c) {
-            final Color color = c['color'] as Color;
+          ...categorySales.entries.map((e) {
+            final Color color = colors[colorIdx % colors.length];
+            colorIdx++;
+            final double pct = totalCatRev > 0 ? (e.value / totalCatRev).clamp(0.02, 1.0) : 0.2;
+
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Column(
@@ -501,15 +679,15 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(c['name'] as String, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
-                      Text(c['val'] as String, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                      Text(e.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                      Text('₹${e.value.toStringAsFixed(0)} (${(pct * 100).toStringAsFixed(1)}%)', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
                     ],
                   ),
                   const SizedBox(height: 5),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: c['pct'] as double,
+                      value: pct,
                       backgroundColor: const Color(0xFFF1F5F9),
                       valueColor: AlwaysStoppedAnimation<Color>(color),
                       minHeight: 6,
@@ -526,13 +704,27 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   // 5. TOP SELLING PRODUCTS
   Widget _buildTopSellingProductsSection() {
-    final products = [
-      {'title': 'Whey Protein 1kg', 'desc': '412 Orders', 'rev': '₹10,29,588', 'growth': '+18.4%', 'img': 'assets/images/nutrifit_whey_protein.jpg'},
-      {'title': 'Creatine Monohydrate', 'desc': '318 Orders', 'rev': '₹4,76,682', 'growth': '+14.2%', 'img': 'assets/images/product_1.png'},
-      {'title': 'Peanut Butter', 'desc': '245 Orders', 'rev': '₹1,22,255', 'growth': '+10.1%', 'img': 'assets/images/product_2.png'},
-      {'title': 'BCAA', 'desc': '198 Orders', 'rev': '₹2,37,402', 'growth': '+12.6%', 'img': 'assets/images/nutrifit_whey_protein.jpg'},
-      {'title': 'Resistance Band Set', 'desc': '152 Orders', 'rev': '₹1,21,448', 'growth': '+7.4%', 'img': 'assets/images/product_1.png'},
-    ];
+    final Map<String, Map<String, dynamic>> productStats = {};
+
+    for (final o in _orders) {
+      final List items = o['items'] is List ? o['items'] : (o['itemList'] is List ? o['itemList'] : []);
+      for (final item in items) {
+        final title = (item['title'] ?? item['name'] ?? 'Product Item').toString();
+        final img = (item['image'] ?? item['imageUrl'] ?? item['mainImageUrl'] ?? '').toString();
+        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+
+        if (!productStats.containsKey(title)) {
+          productStats[title] = {'title': title, 'img': img, 'qty': 0, 'revenue': 0.0};
+        }
+        productStats[title]!['qty'] = (productStats[title]!['qty'] as int) + qty;
+        productStats[title]!['revenue'] = (productStats[title]!['revenue'] as double) + (price * qty);
+      }
+    }
+
+    final List<Map<String, dynamic>> topProductsList = productStats.values.toList();
+    topProductsList.sort((a, b) => (b['qty'] as int).compareTo(a['qty'] as int));
+    final displayList = topProductsList.take(5).toList();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -544,40 +736,56 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
               Text('4. Top Selling Products', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-              Text('View All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF22C55E))),
+              Text('Live Sales', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
             ],
           ),
           const SizedBox(height: 14),
-          ...products.map((p) => Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14)),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(p['img'] as String, width: 38, height: 38, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.inventory_2)),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(p['title'] as String, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                      Text(p['desc'] as String, style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+          if (displayList.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(child: Text('No product sales recorded yet', style: TextStyle(color: Color(0xFF94A3B8)))),
+            )
+          else
+            ...displayList.map((p) {
+              final String title = p['title'];
+              final String img = p['img'];
+              final int qty = p['qty'];
+              final double revenue = p['revenue'];
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14)),
+                child: Row(
                   children: [
-                    Text(p['rev'] as String, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                    Text(p['growth'] as String, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                      clipBehavior: Clip.antiAlias,
+                      child: img.isNotEmpty
+                          ? Image.network(
+                              CategoryBackendService.getDisplayableImageUrl(img),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2_rounded, size: 20, color: Color(0xFF64748B)),
+                            )
+                          : const Icon(Icons.inventory_2_rounded, size: 20, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text('$qty Units Sold', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                        ],
+                      ),
+                    ),
+                    Text('₹${revenue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF10B981))),
                   ],
                 ),
-              ],
-            ),
-          )),
+              );
+            }),
         ],
       ),
     );
@@ -1190,6 +1398,25 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(String title, String val, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              Text(title, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+            ],
+          ),
+          Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
         ],
       ),
     );

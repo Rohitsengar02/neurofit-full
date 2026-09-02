@@ -20,7 +20,25 @@ const userSchema = new mongoose.Schema({
     focusAreas: [{ type: String }],
     medicalConditions: { type: String, default: '' },
     completedAt: { type: Date, default: Date.now }
-  }
+  },
+  addresses: [{
+    id: { type: String, default: () => 'addr_' + Date.now() },
+    tag: { type: String, default: 'Home' },
+    name: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    flat: { type: String, default: '' },
+    building: { type: String, default: '' },
+    area: { type: String, default: '' },
+    city: { type: String, default: '' },
+    state: { type: String, default: 'State' },
+    pincode: { type: String, default: '' },
+    latitude: { type: Number, default: null },
+    longitude: { type: Number, default: null },
+    isDefault: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  fcmToken: { type: String, default: '' },
+  fcmTokens: [{ type: String }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

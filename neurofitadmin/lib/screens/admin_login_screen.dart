@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import '../constants/api_constants.dart';
 import 'admin_dashboard_screen.dart';
 
 class AdminLoginScreen extends StatefulWidget {
@@ -54,7 +55,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
   Future<bool> _verifyAdminWithBackend(String email, String password) async {
     final urls = [
-      'http://10.60.114.191:5000/api/admin/login',
+      '${ApiConstants.apiBaseUrl}/admin/login',
       'http://localhost:5000/api/admin/login',
       'http://10.0.2.2:5000/api/admin/login',
     ];

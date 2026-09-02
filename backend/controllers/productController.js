@@ -27,6 +27,8 @@ exports.createOrUpdateProduct = async (req, res) => {
       { ...req.body, id: prodId },
       { new: true, upsert: true }
     );
+    req.app.get('io')?.emit('product_updated', product);
+    req.app.get('io')?.emit('products_updated', product);
     res.json({ success: true, data: product });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -37,6 +39,8 @@ exports.deleteProduct = async (req, res) => {
   try {
     const prodId = req.params.id;
     await Product.findOneAndDelete({ id: prodId });
+    req.app.get('io')?.emit('product_deleted', { id: prodId });
+    req.app.get('io')?.emit('products_updated', { id: prodId });
     res.json({ success: true, message: 'Product deleted successfully from MongoDB Atlas' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

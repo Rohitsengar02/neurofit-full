@@ -1,27 +1,38 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../constants/api_constants.dart';
 
 class LayoutSectionModel {
   String id;
+  String sectionId;
   String title;
   String subtitle;
-  String type; // 'products', 'banners', 'categories'
-  String layoutMode; // 'carousel', 'grid'
-  String filterSource; // 'all', 'featured', 'category', 'subcategory', 'selected_ids'
+  bool showTitle;
+  String type; // 'products', 'banners', 'categories', 'subcategories', 'custom_promo'
+  String layoutMode; // 'carousel', 'grid', 'banner_strip', 'hero_carousel', 'two_column'
+  String filterSource; // 'all', 'featured', 'trending', 'category', 'subcategory', 'selected_ids', 'custom'
   String filterId; // categoryId or subcategoryId if filtered
   String filterName; // category or subcategory name
   List<String> selectedItemIds; // specific banner or product IDs
   int itemLimit;
   int sortOrder;
   bool isActive;
+  String customBannerImageUrl;
+  String customBannerTargetType;
+  String customBannerTargetId;
+  String customBannerButtonText;
+  String customBannerBadge;
   DateTime? createdAt;
   DateTime? updatedAt;
 
   LayoutSectionModel({
     required this.id,
+    String? sectionId,
     required this.title,
     this.subtitle = '',
+    this.showTitle = true,
     required this.type,
     this.layoutMode = 'carousel',
     this.filterSource = 'all',
@@ -31,15 +42,81 @@ class LayoutSectionModel {
     this.itemLimit = 10,
     this.sortOrder = 1,
     this.isActive = true,
+    this.customBannerImageUrl = '',
+    this.customBannerTargetType = 'category',
+    this.customBannerTargetId = '',
+    this.customBannerButtonText = 'Shop Now',
+    this.customBannerBadge = '',
     this.createdAt,
     this.updatedAt,
-  }) : selectedItemIds = selectedItemIds ?? [];
+  })  : sectionId = sectionId ?? id,
+        selectedItemIds = selectedItemIds ?? [];
+
+  factory LayoutSectionModel.fromJson(Map<String, dynamic> json) {
+    final secId = json['id'] ?? json['sectionId'] ?? json['_id'] ?? 'sec_${DateTime.now().millisecondsSinceEpoch}';
+
+    List<String> ids = [];
+    if (json['selectedItemIds'] != null && json['selectedItemIds'] is List) {
+      ids = (json['selectedItemIds'] as List).map((e) => e.toString()).toList();
+    }
+
+    return LayoutSectionModel(
+      id: secId,
+      sectionId: json['sectionId'] ?? secId,
+      title: json['title'] ?? 'Section',
+      subtitle: json['subtitle'] ?? '',
+      showTitle: json['showTitle'] ?? json['showHeading'] ?? true,
+      type: json['type'] ?? 'products',
+      layoutMode: json['layoutMode'] ?? 'carousel',
+      filterSource: json['filterSource'] ?? 'all',
+      filterId: json['filterId'] ?? '',
+      filterName: json['filterName'] ?? '',
+      selectedItemIds: ids,
+      itemLimit: (json['itemLimit'] as num?)?.toInt() ?? 10,
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? (json['displayOrder'] as num?)?.toInt() ?? 1,
+      isActive: json['isActive'] ?? true,
+      customBannerImageUrl: json['customBannerImageUrl'] ?? '',
+      customBannerTargetType: json['customBannerTargetType'] ?? 'category',
+      customBannerTargetId: json['customBannerTargetId'] ?? '',
+      customBannerButtonText: json['customBannerButtonText'] ?? 'Shop Now',
+      customBannerBadge: json['customBannerBadge'] ?? '',
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
+      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'sectionId': sectionId,
+      'title': title,
+      'subtitle': subtitle,
+      'showTitle': showTitle,
+      'showHeading': showTitle,
+      'type': type,
+      'layoutMode': layoutMode,
+      'filterSource': filterSource,
+      'filterId': filterId,
+      'filterName': filterName,
+      'selectedItemIds': selectedItemIds,
+      'itemLimit': itemLimit,
+      'sortOrder': sortOrder,
+      'displayOrder': sortOrder,
+      'isActive': isActive,
+      'customBannerImageUrl': customBannerImageUrl,
+      'customBannerTargetType': customBannerTargetType,
+      'customBannerTargetId': customBannerTargetId,
+      'customBannerButtonText': customBannerButtonText,
+      'customBannerBadge': customBannerBadge,
+    };
+  }
 
   Map<String, dynamic> toFirestoreFields() {
     return {
       'id': {'stringValue': id},
       'title': {'stringValue': title},
       'subtitle': {'stringValue': subtitle},
+      'showTitle': {'booleanValue': showTitle},
       'type': {'stringValue': type},
       'layoutMode': {'stringValue': layoutMode},
       'filterSource': {'stringValue': filterSource},
@@ -53,6 +130,7 @@ class LayoutSectionModel {
       'itemLimit': {'integerValue': itemLimit.toString()},
       'sortOrder': {'integerValue': sortOrder.toString()},
       'isActive': {'booleanValue': isActive},
+      'customBannerImageUrl': {'stringValue': customBannerImageUrl},
       'createdAt': {'timestampValue': (createdAt ?? DateTime.now()).toUtc().toIso8601String()},
       'updatedAt': {'timestampValue': (updatedAt ?? DateTime.now()).toUtc().toIso8601String()},
     };
@@ -66,12 +144,13 @@ class LayoutSectionModel {
     final String secId = fields['id']?['stringValue'] ?? docId;
     final String title = fields['title']?['stringValue'] ?? 'Section';
     final String subtitle = fields['subtitle']?['stringValue'] ?? '';
+    final bool showTitle = fields['showTitle']?['booleanValue'] ?? (fields['showHeading']?['booleanValue'] ?? true);
     final String type = fields['type']?['stringValue'] ?? 'products';
     final String layoutMode = fields['layoutMode']?['stringValue'] ?? 'carousel';
     final String filterSource = fields['filterSource']?['stringValue'] ?? 'all';
     final String filterId = fields['filterId']?['stringValue'] ?? '';
     final String filterName = fields['filterName']?['stringValue'] ?? '';
-    
+
     final selectedIds = (fields['selectedItemIds']?['arrayValue']?['values'] as List<dynamic>?)
             ?.map((v) => v['stringValue']?.toString() ?? '')
             .where((v) => v.isNotEmpty)
@@ -81,6 +160,7 @@ class LayoutSectionModel {
     final int itemLimit = int.tryParse(fields['itemLimit']?['integerValue']?.toString() ?? '10') ?? 10;
     final int sortOrder = int.tryParse(fields['sortOrder']?['integerValue']?.toString() ?? '1') ?? 1;
     final bool isActive = fields['isActive']?['booleanValue'] ?? true;
+    final String customBannerImageUrl = fields['customBannerImageUrl']?['stringValue'] ?? '';
 
     final DateTime createdAt = fields['createdAt']?['timestampValue'] != null
         ? DateTime.tryParse(fields['createdAt']['timestampValue']) ?? DateTime.now()
@@ -93,6 +173,7 @@ class LayoutSectionModel {
       id: secId,
       title: title,
       subtitle: subtitle,
+      showTitle: showTitle,
       type: type,
       layoutMode: layoutMode,
       filterSource: filterSource,
@@ -102,6 +183,7 @@ class LayoutSectionModel {
       itemLimit: itemLimit,
       sortOrder: sortOrder,
       isActive: isActive,
+      customBannerImageUrl: customBannerImageUrl,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -111,8 +193,12 @@ class LayoutSectionModel {
 class MarketplaceHomeLayoutService extends ChangeNotifier {
   static final MarketplaceHomeLayoutService _instance = MarketplaceHomeLayoutService._internal();
   factory MarketplaceHomeLayoutService() => _instance;
+
+  IO.Socket? _socket;
+
   MarketplaceHomeLayoutService._internal() {
     fetchLayoutSectionsFromFirestore();
+    _initSocket();
   }
 
   static const String firebaseProjectId = 'neurofit-52fe0';
@@ -126,13 +212,108 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
   List<LayoutSectionModel> get sections => List.unmodifiable(_sections);
   List<LayoutSectionModel> get activeSections => _sections.where((s) => s.isActive).toList();
 
+  void _initSocket() {
+    try {
+      final socketUri = 'http://localhost:5000';
+      _socket = IO.io(
+        socketUri,
+        IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
+      );
+
+      _socket?.connect();
+
+      _socket?.onConnect((_) {
+        debugPrint('🔌 [ADMIN SOCKET] Connected to Layout Sections real-time updates');
+      });
+
+      _socket?.on('layout_section_created', (data) {
+        debugPrint('📡 [ADMIN SOCKET] layout_section_created: $data');
+        if (data is Map<String, dynamic>) {
+          final newSec = LayoutSectionModel.fromJson(data);
+          _sections.removeWhere((s) => s.id == newSec.id || s.sectionId == newSec.sectionId);
+          _sections.add(newSec);
+          _sections.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('layout_section_updated', (data) {
+        debugPrint('📡 [ADMIN SOCKET] layout_section_updated: $data');
+        if (data is Map<String, dynamic>) {
+          final updated = LayoutSectionModel.fromJson(data);
+          final index = _sections.indexWhere((s) => s.id == updated.id || s.sectionId == updated.sectionId);
+          if (index != -1) {
+            _sections[index] = updated;
+          } else {
+            _sections.add(updated);
+          }
+          _sections.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('layout_section_deleted', (data) {
+        debugPrint('📡 [ADMIN SOCKET] layout_section_deleted: $data');
+        final delId = (data is Map) ? (data['id'] ?? data['sectionId']) : data.toString();
+        _sections.removeWhere((s) => s.id == delId || s.sectionId == delId);
+        notifyListeners();
+      });
+
+      _socket?.on('layout_sections_updated', (data) {
+        if (data is List) {
+          final List<LayoutSectionModel> list = [];
+          for (var item in data) {
+            if (item is Map<String, dynamic>) list.add(LayoutSectionModel.fromJson(item));
+          }
+          list.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          _sections.clear();
+          _sections.addAll(list);
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ [ADMIN SOCKET] Layout sections socket error: $e');
+    }
+  }
+
   Future<void> fetchLayoutSectionsFromFirestore() async {
     _isLoading = true;
     notifyListeners();
 
+    // 1. Fetch from MongoDB Atlas Backend REST API
+    final backendUrls = [
+      '${ApiConstants.apiBaseUrl}/layout',
+      'http://localhost:5000/api/layout',
+      'http://10.0.2.2:5000/api/layout',
+    ];
+
+    for (final url in backendUrls) {
+      try {
+        final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final items = data['data'] as List<dynamic>? ?? [];
+          if (items.isNotEmpty) {
+            final List<LayoutSectionModel> fetched = [];
+            for (var item in items) {
+              fetched.add(LayoutSectionModel.fromJson(item as Map<String, dynamic>));
+            }
+            fetched.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+            _sections.clear();
+            _sections.addAll(fetched);
+            _isLoading = false;
+            notifyListeners();
+            debugPrint('✅ [HOME LAYOUT LOADED FROM MONGODB ATLAS] ${_sections.length} layout sections');
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback to Firestore
     try {
       final Uri uri = Uri.parse('$firestoreBase/marketplace_home_layout?key=$firebaseApiKey&pageSize=100');
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http.get(uri).timeout(const Duration(seconds: 4));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -146,7 +327,6 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
         fetched.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
         _sections.clear();
         _sections.addAll(fetched);
-        debugPrint('✅ [HOME LAYOUT LOADED] ${_sections.length} layout sections');
       }
     } catch (e) {
       debugPrint('Error loading home layout sections: $e');
@@ -161,17 +341,27 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final Uri uri = Uri.parse('$firestoreBase/marketplace_home_layout/${section.id}?key=$firebaseApiKey');
-      final res = await http.patch(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'fields': section.toFirestoreFields()}),
-      );
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/layout/${section.id}',
+        'http://localhost:5000/api/layout/${section.id}',
+        'http://10.0.2.2:5000/api/layout/${section.id}',
+      ];
 
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        await fetchLayoutSectionsFromFirestore();
-        return true;
+      for (final url in backendUrls) {
+        try {
+          final res = await http.put(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(section.toJson()),
+          ).timeout(const Duration(seconds: 4));
+
+          if (res.statusCode == 200 || res.statusCode == 201) {
+            await fetchLayoutSectionsFromFirestore();
+            return true;
+          }
+        } catch (_) {}
       }
+
       return false;
     } catch (e) {
       debugPrint('Error saving layout section: $e');
@@ -182,18 +372,56 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     }
   }
 
+  Future<bool> toggleSectionStatus(String sectionId, bool isActive) async {
+    try {
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/layout/$sectionId/status',
+        'http://localhost:5000/api/layout/$sectionId/status',
+        'http://10.0.2.2:5000/api/layout/$sectionId/status',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          final res = await http.patch(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'isActive': isActive}),
+          ).timeout(const Duration(seconds: 3));
+
+          if (res.statusCode == 200) {
+            await fetchLayoutSectionsFromFirestore();
+            return true;
+          }
+        } catch (_) {}
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> deleteSection(String sectionId) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final Uri uri = Uri.parse('$firestoreBase/marketplace_home_layout/$sectionId?key=$firebaseApiKey');
-      final res = await http.delete(uri);
-      if (res.statusCode == 200) {
-        _sections.removeWhere((s) => s.id == sectionId);
-        notifyListeners();
-        return true;
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/layout/$sectionId',
+        'http://localhost:5000/api/layout/$sectionId',
+        'http://10.0.2.2:5000/api/layout/$sectionId',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          final res = await http.delete(Uri.parse(url)).timeout(const Duration(seconds: 3));
+          if (res.statusCode == 200) {
+            _sections.removeWhere((s) => s.id == sectionId || s.sectionId == sectionId);
+            notifyListeners();
+            return true;
+          }
+        } catch (_) {}
       }
+
       return false;
     } catch (e) {
       return false;
@@ -208,11 +436,30 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     final item = _sections.removeAt(oldIndex);
     _sections.insert(newIndex, item);
 
+    final List<Map<String, dynamic>> orders = [];
     for (int i = 0; i < _sections.length; i++) {
       _sections[i].sortOrder = i + 1;
-      // Fire-and-forget background update to Firestore
-      saveSection(_sections[i]);
+      orders.add({'id': _sections[i].id, 'sortOrder': i + 1});
     }
     notifyListeners();
+
+    try {
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/layout/reorder',
+        'http://localhost:5000/api/layout/reorder',
+        'http://10.0.2.2:5000/api/layout/reorder',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          await http.post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'sectionOrders': orders}),
+          ).timeout(const Duration(seconds: 3));
+          break;
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 }

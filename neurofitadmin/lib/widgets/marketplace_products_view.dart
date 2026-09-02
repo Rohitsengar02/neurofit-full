@@ -2,6 +2,7 @@ import 'skeleton_loader.dart';
 import 'marketplace_add_product_view.dart';
 import 'package:flutter/material.dart';
 import '../services/products_backend_service.dart';
+import '../services/category_backend_service.dart';
 
 class MarketplaceProductsView extends StatefulWidget {
   final String selectedDateRange;
@@ -211,7 +212,7 @@ class _MarketplaceProductsViewState extends State<MarketplaceProductsView> {
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: Image.network(
-                      p.mainImageUrl,
+                      CategoryBackendService.getDisplayableImageUrl(p.mainImageUrl),
                       fit: BoxFit.cover,
                       errorBuilder: (c, e, s) => const Center(
                         child: Icon(Icons.shopping_bag_rounded, size: 36, color: Color(0xFF6366F1)),
@@ -443,7 +444,7 @@ class _ProductDetailsSliderSheetState extends State<_ProductDetailsSliderSheet> 
                             onPageChanged: (i) => setState(() => _currentCarouselIndex = i),
                             itemBuilder: (context, index) {
                               return Image.network(
-                                allImages[index],
+                                CategoryBackendService.getDisplayableImageUrl(allImages[index]),
                                 fit: BoxFit.cover,
                                 width: double.infinity,
                                 errorBuilder: (c, e, s) => Container(

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:neurofitadmin/constants/api_constants.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'category_backend_service.dart';
 
 class BannerModel {
@@ -47,6 +49,32 @@ class BannerModel {
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
+  factory BannerModel.fromJson(Map<String, dynamic> json) {
+    final bId = json['bannerId'] ?? json['id'] ?? json['_id'] ?? '';
+    final statusStr = json['status'] ?? 'Active';
+    final bool active = json['isActive'] ?? (statusStr.toString().toLowerCase() == 'active');
+
+    return BannerModel(
+      bannerId: bId,
+      id: bId,
+      title: json['title'] ?? '',
+      subtitle: json['subtitle'] ?? '',
+      imageUrl: json['imageUrl'] ?? '',
+      imageKey: json['imageKey'] ?? '',
+      targetType: json['targetType'] ?? 'category',
+      targetId: json['targetId'] ?? '',
+      targetName: json['targetName'] ?? '',
+      buttonText: json['buttonText'] ?? 'Shop Now',
+      badge: json['badge'] ?? json['badgeText'] ?? 'FEATURED',
+      sortOrder: (json['sortOrder'] as num?)?.toInt() ?? (json['displayOrder'] as num?)?.toInt() ?? 1,
+      status: statusStr,
+      isActive: active,
+      discountCode: json['discountCode'] ?? '',
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now() : DateTime.now(),
+      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now() : DateTime.now(),
+    );
+  }
+
   Map<String, dynamic> toFirestoreFields() {
     return {
       'bannerId': {'stringValue': bannerId},
@@ -88,12 +116,8 @@ class BannerModel {
     final bool isActive = fields['isActive']?['booleanValue'] ?? (status == 'Active');
     final String discountCode = fields['discountCode']?['stringValue'] ?? '';
 
-    final DateTime createdAt = fields['createdAt']?['timestampValue'] != null
-        ? DateTime.tryParse(fields['createdAt']['timestampValue']) ?? DateTime.now()
-        : DateTime.now();
-    final DateTime updatedAt = fields['updatedAt']?['timestampValue'] != null
-        ? DateTime.tryParse(fields['updatedAt']['timestampValue']) ?? DateTime.now()
-        : DateTime.now();
+    final DateTime createdAt = fields['createdAt']?['timestampValue'] != null ? DateTime.tryParse(fields['createdAt']['timestampValue']) ?? DateTime.now() : DateTime.now();
+    final DateTime updatedAt = fields['updatedAt']?['timestampValue'] != null ? DateTime.tryParse(fields['updatedAt']['timestampValue']) ?? DateTime.now() : DateTime.now();
 
     return BannerModel(
       bannerId: bId,
@@ -120,8 +144,12 @@ class BannerModel {
 class BannersBackendService extends ChangeNotifier {
   static final BannersBackendService _instance = BannersBackendService._internal();
   factory BannersBackendService() => _instance;
+
+  IO.Socket? _socket;
+
   BannersBackendService._internal() {
     fetchBannersFromFirestore();
+    _initSocket();
   }
 
   static const String firebaseProjectId = 'neurofit-52fe0';
@@ -133,16 +161,112 @@ class BannersBackendService extends ChangeNotifier {
   final List<BannerModel> _banners = [];
   List<BannerModel> get banners => List.unmodifiable(_banners);
 
+  void _initSocket() {
+    try {
+      final socketUri = 'http://localhost:5000';
+      _socket = IO.io(
+        socketUri,
+        IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
+      );
+
+      _socket?.connect();
+
+      _socket?.onConnect((_) {
+        debugPrint('🔌 [ADMIN SOCKET] Connected to real-time banner updates server');
+        _socket?.emit('join_admin_room');
+      });
+
+      _socket?.on('banner_created', (data) {
+        debugPrint('📡 [ADMIN SOCKET] banner_created event: $data');
+        if (data is Map<String, dynamic>) {
+          final newBanner = BannerModel.fromJson(data);
+          _banners.removeWhere((b) => b.bannerId == newBanner.bannerId || b.id == newBanner.id);
+          _banners.add(newBanner);
+          _banners.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('banner_updated', (data) {
+        debugPrint('📡 [ADMIN SOCKET] banner_updated event: $data');
+        if (data is Map<String, dynamic>) {
+          final updated = BannerModel.fromJson(data);
+          final index = _banners.indexWhere((b) => b.bannerId == updated.bannerId || b.id == updated.id);
+          if (index != -1) {
+            _banners[index] = updated;
+          } else {
+            _banners.add(updated);
+          }
+          _banners.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('banner_deleted', (data) {
+        debugPrint('📡 [ADMIN SOCKET] banner_deleted event: $data');
+        final delId = (data is Map) ? (data['id'] ?? data['bannerId']) : data.toString();
+        _banners.removeWhere((b) => b.bannerId == delId || b.id == delId);
+        notifyListeners();
+      });
+
+      _socket?.on('banners_updated', (data) {
+        if (data is List) {
+          final List<BannerModel> list = [];
+          for (var item in data) {
+            if (item is Map<String, dynamic>) list.add(BannerModel.fromJson(item));
+          }
+          list.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          _banners.clear();
+          _banners.addAll(list);
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ [ADMIN SOCKET] Connection error: $e');
+    }
+  }
+
   Future<void> fetchBannersFromFirestore() async {
     _isLoading = true;
     notifyListeners();
 
+    // 1. Fetch from MongoDB Atlas Backend REST API
+    final backendUrls = [
+      '${ApiConstants.apiBaseUrl}/banners',
+      'http://localhost:5000/api/banners',
+      'http://10.0.2.2:5000/api/banners',
+    ];
+
+    for (final url in backendUrls) {
+      try {
+        final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final items = data['data'] as List<dynamic>? ?? [];
+          if (items.isNotEmpty) {
+            final List<BannerModel> fetched = [];
+            for (var item in items) {
+              fetched.add(BannerModel.fromJson(item as Map<String, dynamic>));
+            }
+            fetched.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+            _banners.clear();
+            _banners.addAll(fetched);
+            _isLoading = false;
+            notifyListeners();
+            debugPrint('✅ [BANNERS LOADED FROM MONGODB ATLAS] ${_banners.length} live banners');
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback to Firestore
     try {
       final Uri uri = Uri.parse(
         'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/banners?key=$firebaseApiKey&pageSize=100',
       );
 
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await http.get(uri).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final documents = data['documents'] as List<dynamic>?;
@@ -154,7 +278,6 @@ class BannersBackendService extends ChangeNotifier {
           fetched.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
           _banners.clear();
           _banners.addAll(fetched);
-          debugPrint('✅ [BANNERS LOADED FROM FIRESTORE] ${_banners.length} live banners');
         }
       }
     } catch (e) {
@@ -189,39 +312,81 @@ class BannersBackendService extends ChangeNotifier {
 
       if (uploadedUrl == null) return false;
 
-      final String bannerId = 'banner_${DateTime.now().millisecondsSinceEpoch}';
-      final newBanner = BannerModel(
-        bannerId: bannerId,
+      return createBannerWithUrl(
         title: title,
         subtitle: subtitle,
-        imageUrl: uploadedUrl,
-        imageKey: 'uploads/$imageFileName',
         targetType: targetType,
         targetId: targetId,
         targetName: targetName,
         buttonText: buttonText,
         badge: badge,
         discountCode: discountCode,
+        imageUrl: uploadedUrl,
         sortOrder: sortOrder,
       );
-
-      final Uri uri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/banners/$bannerId?key=$firebaseApiKey',
-      );
-
-      final res = await http.patch(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'fields': newBanner.toFirestoreFields()}),
-      );
-
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        await fetchBannersFromFirestore();
-        return true;
-      }
-      return false;
     } catch (e) {
       debugPrint('Error creating banner: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> createBannerWithUrl({
+    required String title,
+    required String subtitle,
+    required String targetType,
+    required String targetId,
+    required String targetName,
+    required String buttonText,
+    String badge = 'FEATURED',
+    String discountCode = '',
+    required String imageUrl,
+    int sortOrder = 1,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final String bannerId = 'banner_${DateTime.now().millisecondsSinceEpoch}';
+
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/banners',
+        'http://localhost:5000/api/banners',
+        'http://10.0.2.2:5000/api/banners',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          final res = await http.post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'id': bannerId,
+              'bannerId': bannerId,
+              'title': title,
+              'subtitle': subtitle,
+              'imageUrl': imageUrl,
+              'targetType': targetType,
+              'targetId': targetId,
+              'targetName': targetName,
+              'buttonText': buttonText,
+              'badge': badge,
+              'discountCode': discountCode,
+              'sortOrder': sortOrder,
+              'status': 'Active',
+            }),
+          ).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200 || res.statusCode == 201) {
+            await fetchBannersFromFirestore();
+            return true;
+          }
+        } catch (_) {}
+      }
+
+      return false;
+    } catch (e) {
       return false;
     } finally {
       _isLoading = false;
@@ -240,6 +405,7 @@ class BannersBackendService extends ChangeNotifier {
     String badge = 'FEATURED',
     String discountCode = '',
     String status = 'Active',
+    String? newImageUrl,
     Uint8List? newImageBytes,
     String? newImageFileName,
     int? sortOrder,
@@ -253,7 +419,7 @@ class BannersBackendService extends ChangeNotifier {
         orElse: () => BannerModel(bannerId: bannerId, title: title, imageUrl: ''),
       );
 
-      String finalImageUrl = existing.imageUrl;
+      String finalImageUrl = (newImageUrl != null && newImageUrl.isNotEmpty) ? newImageUrl : existing.imageUrl;
       if (newImageBytes != null && newImageFileName != null) {
         final uploadedUrl = await CategoryBackendService().uploadRawImageToR2(
           fileName: newImageFileName,
@@ -262,34 +428,40 @@ class BannersBackendService extends ChangeNotifier {
         if (uploadedUrl != null) finalImageUrl = uploadedUrl;
       }
 
-      existing.title = title;
-      existing.subtitle = subtitle;
-      existing.imageUrl = finalImageUrl;
-      existing.targetType = targetType;
-      existing.targetId = targetId;
-      existing.targetName = targetName;
-      existing.buttonText = buttonText;
-      existing.badge = badge;
-      existing.discountCode = discountCode;
-      existing.status = status;
-      existing.isActive = status == 'Active';
-      if (sortOrder != null) existing.sortOrder = sortOrder;
-      existing.updatedAt = DateTime.now();
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/banners/$bannerId',
+        'http://localhost:5000/api/banners/$bannerId',
+        'http://10.0.2.2:5000/api/banners/$bannerId',
+      ];
 
-      final Uri uri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/banners/$bannerId?key=$firebaseApiKey',
-      );
-
-      final res = await http.patch(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'fields': existing.toFirestoreFields()}),
-      );
-
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        await fetchBannersFromFirestore();
-        return true;
+      for (final url in backendUrls) {
+        try {
+          final res = await http.put(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'id': bannerId,
+              'bannerId': bannerId,
+              'title': title,
+              'subtitle': subtitle,
+              'imageUrl': finalImageUrl,
+              'targetType': targetType,
+              'targetId': targetId,
+              'targetName': targetName,
+              'buttonText': buttonText,
+              'badge': badge,
+              'discountCode': discountCode,
+              'sortOrder': sortOrder ?? existing.sortOrder,
+              'status': status,
+            }),
+          ).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200) {
+            await fetchBannersFromFirestore();
+            return true;
+          }
+        } catch (_) {}
       }
+
       return false;
     } catch (e) {
       debugPrint('Error updating banner: $e');
@@ -305,21 +477,56 @@ class BannersBackendService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final Uri uri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/banners/$bannerId?key=$firebaseApiKey',
-      );
-      final res = await http.delete(uri);
-      if (res.statusCode == 200) {
-        _banners.removeWhere((b) => b.bannerId == bannerId);
-        notifyListeners();
-        return true;
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/banners/$bannerId',
+        'http://localhost:5000/api/banners/$bannerId',
+        'http://10.0.2.2:5000/api/banners/$bannerId',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          final res = await http.delete(Uri.parse(url)).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200) {
+            _banners.removeWhere((b) => b.bannerId == bannerId || b.id == bannerId);
+            notifyListeners();
+            return true;
+          }
+        } catch (_) {}
       }
+
       return false;
     } catch (e) {
       return false;
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> reorderBanners(List<Map<String, dynamic>> bannerOrders) async {
+    try {
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/banners/reorder',
+        'http://localhost:5000/api/banners/reorder',
+        'http://10.0.2.2:5000/api/banners/reorder',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          final res = await http.post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'bannerOrders': bannerOrders}),
+          ).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200) {
+            await fetchBannersFromFirestore();
+            return true;
+          }
+        } catch (_) {}
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 }

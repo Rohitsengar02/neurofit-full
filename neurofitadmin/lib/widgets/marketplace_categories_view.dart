@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/category_backend_service.dart';
 import 'upload_progress_overlay.dart';
+import 'r2_media_library_picker_modal.dart';
 
 class MarketplaceCategoriesView extends StatefulWidget {
   final String selectedDateRange;
@@ -342,13 +343,13 @@ class _MarketplaceCategoriesViewState extends State<MarketplaceCategoriesView> {
                     child: Opacity(
                       opacity: isDeactivated ? 0.45 : 1.0,
                       child: Image.network(
-                        cat.imageUrl,
+                        CategoryBackendService.getDisplayableImageUrl(cat.imageUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return Container(
                             color: const Color(0xFF1E293B),
                             child: const Center(
-                              child: Icon(Icons.cloud_done_rounded, size: 32, color: Color(0xFF6366F1)),
+                              child: Icon(Icons.fitness_center_rounded, size: 36, color: Color(0xFF10B981)),
                             ),
                           );
                         },
@@ -466,7 +467,7 @@ class _MarketplaceCategoriesViewState extends State<MarketplaceCategoriesView> {
                     child: Opacity(
                       opacity: isDeactivated ? 0.45 : 1.0,
                       child: Image.network(
-                        sub.imageUrl,
+                        CategoryBackendService.getDisplayableImageUrl(sub.imageUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (c, e, s) => Container(
                           color: const Color(0xFF1E293B),
@@ -639,6 +640,20 @@ class _AddSubCategoryBottomSheetState extends State<_AddSubCategoryBottomSheet> 
     }
   }
 
+  String? _selectedR2Url;
+
+  void _openR2MediaLibrary() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+          _imageBytes = null;
+        });
+      },
+    );
+  }
+
   void _submitSubCategory() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
@@ -649,23 +664,35 @@ class _AddSubCategoryBottomSheetState extends State<_AddSubCategoryBottomSheet> 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select parent category')));
       return;
     }
-    if (_imageBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select an image')));
+    if (_imageBytes == null && _selectedR2Url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select or pick an image')));
       return;
     }
 
     setState(() => _isProcessing = true);
     Navigator.pop(context);
 
-    final newSub = await CategoryBackendService().createSubCategoryWithImage(
-      parentCategoryId: _selectedParentId!,
-      parentCategoryName: _selectedParentName ?? 'Category',
-      title: title,
-      fileName: _selectedImage?.name ?? 'subcategory.jpg',
-      imageBytes: _imageBytes!,
-    );
+    bool ok = false;
+    if (_selectedR2Url != null) {
+      ok = await CategoryBackendService().createSubCategoryWithUrl(
+        parentCategoryId: _selectedParentId!,
+        parentCategoryName: _selectedParentName ?? 'Category',
+        name: title,
+        slug: title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
+        imageUrl: _selectedR2Url!,
+      );
+    } else {
+      final newSub = await CategoryBackendService().createSubCategoryWithImage(
+        parentCategoryId: _selectedParentId!,
+        parentCategoryName: _selectedParentName ?? 'Category',
+        title: title,
+        fileName: _selectedImage?.name ?? 'subcategory.jpg',
+        imageBytes: _imageBytes!,
+      );
+      ok = newSub != null;
+    }
 
-    if (newSub != null) {
+    if (ok) {
       widget.onSubCategoryAdded();
     }
   }
@@ -750,12 +777,17 @@ class _AddSubCategoryBottomSheetState extends State<_AddSubCategoryBottomSheet> 
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.35), width: 1.5),
               ),
-              child: _imageBytes != null
+              child: _selectedR2Url != null
                   ? Stack(
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(14),
-                          child: Image.memory(_imageBytes!, width: double.infinity, height: double.infinity, fit: BoxFit.cover),
+                          child: Image.network(
+                            CategoryBackendService.getDisplayableImageUrl(_selectedR2Url!),
+                            width: double.infinity,
+                            height: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         Positioned(
                           top: 8,
@@ -763,20 +795,55 @@ class _AddSubCategoryBottomSheetState extends State<_AddSubCategoryBottomSheet> 
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(8)),
-                            child: const Text('Change', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                            child: const Text('Change R2 Image', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
                           ),
                         ),
                       ],
                     )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF6366F1), size: 28),
-                        SizedBox(height: 6),
-                        Text('Tap to pick sub-category image', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                        Text('Uploaded to R2 uploads folder', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                      ],
-                    ),
+                  : (_imageBytes != null
+                      ? Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Image.memory(_imageBytes!, width: double.infinity, height: double.infinity, fit: BoxFit.cover),
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(8)),
+                                child: const Text('Change', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF6366F1), size: 28),
+                            SizedBox(height: 6),
+                            Text('Tap to pick sub-category image', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                            Text('Uploaded to R2 uploads folder', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                          ],
+                        )),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openR2MediaLibrary,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                side: const BorderSide(color: Color(0xFF6366F1)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.cloud_done_rounded, size: 18, color: Color(0xFF6366F1)),
+              label: const Text(
+                '+ Select from Cloudflare R2 Media Library',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF6366F1)),
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -937,7 +1004,13 @@ class _SubCategoryDetailsSliderSheetState extends State<_SubCategoryDetailsSlide
                         clipBehavior: Clip.antiAlias,
                         child: _newImageBytes != null
                             ? Image.memory(_newImageBytes!, fit: BoxFit.cover)
-                            : Image.network(widget.subCategory.imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Center(child: Icon(Icons.account_tree_rounded, size: 40, color: Color(0xFF6366F1)))),
+                            : Image.network(
+                                CategoryBackendService.getDisplayableImageUrl(widget.subCategory.imageUrl),
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => const Center(
+                                  child: Icon(Icons.account_tree_rounded, size: 40, color: Color(0xFF6366F1)),
+                                ),
+                              ),
                       ),
                       Positioned(
                         bottom: 12,
@@ -1199,7 +1272,13 @@ class _CategoryDetailsSliderSheetState extends State<_CategoryDetailsSliderSheet
                         clipBehavior: Clip.antiAlias,
                         child: _newImageBytes != null
                             ? Image.memory(_newImageBytes!, fit: BoxFit.cover)
-                            : Image.network(widget.category.imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Center(child: Icon(Icons.cloud_done_rounded, size: 40, color: Color(0xFF6366F1)))),
+                            : Image.network(
+                                CategoryBackendService.getDisplayableImageUrl(widget.category.imageUrl),
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => const Center(
+                                  child: Icon(Icons.cloud_done_rounded, size: 40, color: Color(0xFF6366F1)),
+                                ),
+                              ),
                       ),
                       Positioned(
                         bottom: 12,

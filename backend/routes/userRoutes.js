@@ -14,9 +14,18 @@ router.put('/:uid', userController.getOrUpdateUser);
 // POST questionnaire answers
 router.post('/:uid/questionnaire', userController.saveQuestionnaire);
 
-// GET / POST user shipping address
+// Address Routes (User.addresses array in MongoDB)
+router.get('/:uid/addresses', userController.getUserAddresses);
+router.post('/:uid/addresses', userController.saveUserAddress);
+router.delete('/:uid/addresses/:addressId', userController.deleteUserAddress);
+router.put('/:uid/addresses/:addressId/default', userController.setDefaultAddress);
+
+// Backward-compatible single address routes
 router.get('/:uid/address', userController.getUserAddress);
 router.post('/:uid/address', userController.saveUserAddress);
+
+// FCM Push Notification Token registration
+router.post('/:uid/fcm-token', userController.updateFcmToken);
 
 // DELETE user
 router.delete('/:uid', userController.deleteUser);

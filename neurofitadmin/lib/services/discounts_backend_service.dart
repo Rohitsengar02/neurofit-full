@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../constants/api_constants.dart';
 
 class DiscountModel {
   final String discountId;
@@ -92,6 +94,25 @@ class DiscountsBackendService extends ChangeNotifier {
 
   DiscountsBackendService._internal() {
     fetchDiscountsFromFirestore();
+    _initSocket();
+  }
+
+  IO.Socket? _socket;
+  void _initSocket() {
+    try {
+      final socketUri = 'http://localhost:5000';
+      _socket = IO.io(
+        socketUri,
+        IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
+      );
+
+      _socket?.connect();
+
+      _socket?.on('discount_created', (_) => fetchDiscountsFromFirestore());
+      _socket?.on('discount_updated', (_) => fetchDiscountsFromFirestore());
+      _socket?.on('discount_deleted', (_) => fetchDiscountsFromFirestore());
+      _socket?.on('discounts_updated', (_) => fetchDiscountsFromFirestore());
+    } catch (_) {}
   }
 
   static const String firebaseProjectId = "neurofit-52fe0";
@@ -109,7 +130,7 @@ class DiscountsBackendService extends ChangeNotifier {
 
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
-      'http://10.60.114.191:5000/api/discounts',
+      '${ApiConstants.apiBaseUrl}/discounts',
       'http://localhost:5000/api/discounts',
       'http://10.0.2.2:5000/api/discounts',
     ];
@@ -194,7 +215,7 @@ class DiscountsBackendService extends ChangeNotifier {
     try {
       // 1. Sync to MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/discounts',
+        '${ApiConstants.apiBaseUrl}/discounts',
         'http://localhost:5000/api/discounts',
         'http://10.0.2.2:5000/api/discounts',
       ];
@@ -298,7 +319,7 @@ class DiscountsBackendService extends ChangeNotifier {
     try {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/discounts/$discountId',
+        '${ApiConstants.apiBaseUrl}/discounts/$discountId',
         'http://localhost:5000/api/discounts/$discountId',
         'http://10.0.2.2:5000/api/discounts/$discountId',
       ];

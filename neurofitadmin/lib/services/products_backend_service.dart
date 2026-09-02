@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../constants/api_constants.dart';
 import 'category_backend_service.dart';
 
 typedef ProductModel = ProductItem;
@@ -289,7 +290,7 @@ class ProductsBackendService extends ChangeNotifier {
 
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
-      'http://10.60.114.191:5000/api/products',
+      '${ApiConstants.apiBaseUrl}/products',
       'http://localhost:5000/api/products',
       'http://10.0.2.2:5000/api/products',
     ];
@@ -359,7 +360,7 @@ class ProductsBackendService extends ChangeNotifier {
 
       // 1. Sync to MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/products',
+        '${ApiConstants.apiBaseUrl}/products',
         'http://localhost:5000/api/products',
         'http://10.0.2.2:5000/api/products',
       ];
@@ -507,7 +508,7 @@ class ProductsBackendService extends ChangeNotifier {
     try {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/products/$productId',
+        '${ApiConstants.apiBaseUrl}/products/$productId',
         'http://localhost:5000/api/products/$productId',
         'http://10.0.2.2:5000/api/products/$productId',
       ];

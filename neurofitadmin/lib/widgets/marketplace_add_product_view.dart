@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../services/category_backend_service.dart';
 import '../services/discounts_backend_service.dart';
 import '../services/products_backend_service.dart';
+import 'r2_media_library_picker_modal.dart';
 
 class MarketplaceAddProductView extends StatefulWidget {
   final String selectedDateRange;
@@ -152,6 +153,33 @@ class _MarketplaceAddProductViewState extends State<MarketplaceAddProductView> {
         });
       }
     }
+  }
+
+  void _openR2MediaLibraryForMainImage() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _existingMainImageUrl = url;
+          _mainImageBytes = null;
+        });
+      },
+    );
+  }
+
+  void _openR2MediaLibraryForGallery() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _galleryList.add({
+            'name': 'r2_gallery_${DateTime.now().millisecondsSinceEpoch}.jpg',
+            'bytes': null,
+            'url': url,
+          });
+        });
+      },
+    );
   }
 
   void _openAddVariantSheet() {
@@ -489,7 +517,12 @@ class _MarketplaceAddProductViewState extends State<MarketplaceAddProductView> {
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(14),
-                              child: Image.network(_existingMainImageUrl, width: double.infinity, height: double.infinity, fit: BoxFit.cover),
+                              child: Image.network(
+                                CategoryBackendService.getDisplayableImageUrl(_existingMainImageUrl),
+                                width: double.infinity,
+                                height: double.infinity,
+                                fit: BoxFit.cover,
+                              ),
                             ),
                             Positioned(
                               top: 8,
@@ -513,7 +546,24 @@ class _MarketplaceAddProductViewState extends State<MarketplaceAddProductView> {
                         ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openR2MediaLibraryForMainImage,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                side: const BorderSide(color: Color(0xFF6366F1)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.cloud_done_rounded, size: 18, color: Color(0xFF6366F1)),
+              label: const Text(
+                '+ Select Cover from Cloudflare R2 Media Library',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF6366F1)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
 
           // Secondary Gallery Row
           Row(
@@ -524,6 +574,26 @@ class _MarketplaceAddProductViewState extends State<MarketplaceAddProductView> {
                   style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF475569)),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              InkWell(
+                onTap: _openR2MediaLibraryForGallery,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF10B981)),
+                      SizedBox(width: 4),
+                      Text('+ R2 Media', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+                    ],
+                  ),
                 ),
               ),
               InkWell(
@@ -540,7 +610,7 @@ class _MarketplaceAddProductViewState extends State<MarketplaceAddProductView> {
                     children: [
                       Icon(Icons.add_photo_alternate_outlined, size: 14, color: Color(0xFF6366F1)),
                       SizedBox(width: 4),
-                      Text('+ Add Photos', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF6366F1))),
+                      Text('+ Gallery', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF6366F1))),
                     ],
                   ),
                 ),
@@ -564,7 +634,12 @@ class _MarketplaceAddProductViewState extends State<MarketplaceAddProductView> {
                         borderRadius: BorderRadius.circular(10),
                         child: g['bytes'] != null
                             ? Image.memory(g['bytes'], width: 70, height: 70, fit: BoxFit.cover)
-                            : Image.network(g['url'], width: 70, height: 70, fit: BoxFit.cover),
+                            : Image.network(
+                                CategoryBackendService.getDisplayableImageUrl(g['url']),
+                                width: 70,
+                                height: 70,
+                                fit: BoxFit.cover,
+                              ),
                       ),
                       Positioned(
                         top: 2,

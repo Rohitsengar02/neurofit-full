@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../constants/api_constants.dart';
 
 class CategoryModel {
   final String categoryId;
@@ -208,10 +209,22 @@ class CategoryBackendService extends ChangeNotifier {
   static const String firebaseProjectId = "neurofit-52fe0";
   static const String firebaseApiKey = "AIzaSyDcGovQH3Sd_0kdNeSISK6eNCdtjA_g9vg";
 
-  static const String r2AccountId = 'ac49ce9ad0ae91f37e42d7650df40182';
+  static const String r2AccountId = '61519b8c6a1a20d3535eb39e85687539';
   static const String r2BucketName = 'neurofit';
-  static const String r2ApiToken = 'lMtz7z69-9k_L8K_lq18fE0b9zF_7WJ5p5_e4sU4';
-  static const String r2PublicDevUrl = 'https://pub-8c8868c221e54911aa60f862a938c823.r2.dev';
+  static const String r2ApiToken = 'cfat_CUzcTemF5447Ag5mi2gIrcDGYyrMrHSrO9PY6q5Sc69f5185';
+  static const String r2PublicDevUrl = 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev';
+
+  static String getDisplayableImageUrl(String url) {
+    if (url.isEmpty) return '';
+    if (url.contains('r2.dev') || url.startsWith('http://localhost:5000/uploads')) {
+      final fileName = url.split('/').last.split('?').first;
+      if (fileName.isNotEmpty && !fileName.contains(':')) {
+        return '${ApiConstants.apiBaseUrl}/media/file/$fileName';
+      }
+      return '${ApiConstants.apiBaseUrl}/media/proxy?url=${Uri.encodeComponent(url)}';
+    }
+    return url;
+  }
 
   final List<CategoryModel> _categories = [];
   List<CategoryModel> get categories => List.unmodifiable(_categories);
@@ -228,7 +241,7 @@ class CategoryBackendService extends ChangeNotifier {
 
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
-      'http://10.60.114.191:5000/api/categories',
+      '${ApiConstants.apiBaseUrl}/categories',
       'http://localhost:5000/api/categories',
       'http://10.0.2.2:5000/api/categories',
     ];
@@ -287,7 +300,7 @@ class CategoryBackendService extends ChangeNotifier {
 
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
-      'http://10.60.114.191:5000/api/subcategories',
+      '${ApiConstants.apiBaseUrl}/subcategories',
       'http://localhost:5000/api/subcategories',
       'http://10.0.2.2:5000/api/subcategories',
     ];
@@ -357,13 +370,43 @@ class CategoryBackendService extends ChangeNotifier {
     try {
       onProgress?.call(0.25, 'Connecting to Cloudflare R2...');
       final cleanFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-      final Uri r2Uri = Uri.parse(
-        'https://api.cloudflare.com/client/v4/accounts/$r2AccountId/r2/buckets/$r2BucketName/objects/uploads/$cleanFileName',
-      );
-
       String mimeType = 'image/jpeg';
       if (cleanFileName.endsWith('.png')) mimeType = 'image/png';
       if (cleanFileName.endsWith('.webp')) mimeType = 'image/webp';
+
+      // 1. Upload via Express Backend API (Bypasses browser CORS completely)
+      final backendUploadUrls = [
+        '${ApiConstants.apiBaseUrl}/media/upload',
+        'http://localhost:5000/api/media/upload',
+        'http://10.0.2.2:5000/api/media/upload',
+      ];
+
+      for (final url in backendUploadUrls) {
+        try {
+          final res = await http.post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'fileName': cleanFileName,
+              'imageBase64': base64Encode(imageBytes),
+              'mimeType': mimeType,
+            }),
+          ).timeout(const Duration(seconds: 15));
+
+          if (res.statusCode == 200 || res.statusCode == 201) {
+            final data = jsonDecode(res.body);
+            if (data['success'] == true && data['url'] != null) {
+              onProgress?.call(1.0, 'Uploaded to R2');
+              return data['url'].toString();
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 2. Direct Cloudflare API Fallback
+      final Uri r2Uri = Uri.parse(
+        'https://api.cloudflare.com/client/v4/accounts/$r2AccountId/r2/buckets/$r2BucketName/objects/uploads/$cleanFileName',
+      );
 
       final res = await http.put(
         r2Uri,
@@ -376,12 +419,12 @@ class CategoryBackendService extends ChangeNotifier {
 
       if (res.statusCode == 200 || res.statusCode == 201) {
         onProgress?.call(1.0, 'Uploaded to R2');
-        return '$r2PublicDevUrl/$cleanFileName';
+        return '$r2PublicDevUrl/uploads/$cleanFileName';
       }
-      return '$r2PublicDevUrl/$cleanFileName';
+      return '$r2PublicDevUrl/uploads/$cleanFileName';
     } catch (e) {
       debugPrint('R2 Upload error: $e');
-      return '$r2PublicDevUrl/$fileName';
+      return '$r2PublicDevUrl/uploads/$fileName';
     }
   }
 
@@ -413,7 +456,7 @@ class CategoryBackendService extends ChangeNotifier {
 
       // 1. Save to MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/categories',
+        '${ApiConstants.apiBaseUrl}/categories',
         'http://localhost:5000/api/categories',
         'http://10.0.2.2:5000/api/categories',
       ];
@@ -495,7 +538,7 @@ class CategoryBackendService extends ChangeNotifier {
 
       // 1. Save to MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/subcategories',
+        '${ApiConstants.apiBaseUrl}/subcategories',
         'http://localhost:5000/api/subcategories',
         'http://10.0.2.2:5000/api/subcategories',
       ];
@@ -548,6 +591,82 @@ class CategoryBackendService extends ChangeNotifier {
     }
   }
 
+  Future<bool> createSubCategoryWithUrl({
+    required String parentCategoryId,
+    required String parentCategoryName,
+    required String name,
+    required String slug,
+    required String imageUrl,
+    int sortOrder = 1,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final subId = 'sub_${DateTime.now().millisecondsSinceEpoch}';
+      final newSub = SubCategoryModel(
+        subCategoryId: subId,
+        parentCategoryId: parentCategoryId,
+        parentCategoryName: parentCategoryName,
+        name: name,
+        slug: slug,
+        imageUrl: imageUrl,
+        imageKey: '',
+        sortOrder: sortOrder,
+      );
+
+      final backendUrls = [
+        '${ApiConstants.apiBaseUrl}/subcategories',
+        'http://localhost:5000/api/subcategories',
+        'http://10.0.2.2:5000/api/subcategories',
+      ];
+
+      for (final url in backendUrls) {
+        try {
+          final res = await http.post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'id': subId,
+              'parentCategoryId': parentCategoryId,
+              'parentCategoryName': parentCategoryName,
+              'name': name,
+              'slug': slug,
+              'imageUrl': imageUrl,
+              'sortOrder': sortOrder,
+              'status': 'active',
+            }),
+          ).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200 || res.statusCode == 201) {
+            await fetchAllSubCategoriesFromFirestore();
+            return true;
+          }
+        } catch (_) {}
+      }
+
+      final Uri uri = Uri.parse(
+        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/categories/$parentCategoryId/subcategories/$subId?key=$firebaseApiKey',
+      );
+
+      final res = await http.patch(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'fields': newSub.toFirestoreFields()}),
+      );
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        await fetchAllSubCategoriesFromFirestore();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   // Matching methods for MarketplaceCategoriesView
   Future<bool> createCategoryWithImage({
     required String title,
@@ -568,6 +687,71 @@ class CategoryBackendService extends ChangeNotifier {
     );
   }
 
+  Future<bool> createCategoryWithUrl({
+    required String title,
+    required String imageUrl,
+    String? description,
+    int sortOrder = 1,
+  }) async {
+    final slug = title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    final catId = 'cat_${DateTime.now().millisecondsSinceEpoch}';
+
+    final newCat = CategoryModel(
+      categoryId: catId,
+      name: title,
+      title: title,
+      slug: slug,
+      imageUrl: imageUrl,
+      imageKey: '',
+      description: description ?? title,
+      sortOrder: sortOrder,
+    );
+
+    final backendUrls = [
+      '${ApiConstants.apiBaseUrl}/categories',
+      'http://localhost:5000/api/categories',
+      'http://10.0.2.2:5000/api/categories',
+    ];
+
+    for (final url in backendUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse(url),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'id': catId,
+            'name': title,
+            'slug': slug,
+            'imageUrl': imageUrl,
+            'description': description ?? title,
+            'sortOrder': sortOrder,
+            'status': 'active',
+          }),
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200 || res.statusCode == 201) {
+          await fetchCategoriesFromFirestore();
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    final Uri uri = Uri.parse(
+      'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/categories/$catId?key=$firebaseApiKey',
+    );
+
+    final res = await http.patch(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'fields': newCat.toFirestoreFields()}),
+    );
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      await fetchCategoriesFromFirestore();
+      return true;
+    }
+    return false;
+  }
+
   Future<bool> updateCategory({
     required String id,
     String? newName,
@@ -578,7 +762,7 @@ class CategoryBackendService extends ChangeNotifier {
     try {
       // 1. Update in MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/categories/$id',
+        '${ApiConstants.apiBaseUrl}/categories/$id',
         'http://localhost:5000/api/categories/$id',
         'http://10.0.2.2:5000/api/categories/$id',
       ];
@@ -641,7 +825,7 @@ class CategoryBackendService extends ChangeNotifier {
     try {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/categories/$id',
+        '${ApiConstants.apiBaseUrl}/categories/$id',
         'http://localhost:5000/api/categories/$id',
         'http://10.0.2.2:5000/api/categories/$id',
       ];
@@ -706,7 +890,7 @@ class CategoryBackendService extends ChangeNotifier {
     try {
       // 1. Update in MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/subcategories/$subId',
+        '${ApiConstants.apiBaseUrl}/subcategories/$subId',
         'http://localhost:5000/api/subcategories/$subId',
         'http://10.0.2.2:5000/api/subcategories/$subId',
       ];
@@ -772,7 +956,7 @@ class CategoryBackendService extends ChangeNotifier {
     try {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
-        'http://10.60.114.191:5000/api/subcategories/$subId',
+        '${ApiConstants.apiBaseUrl}/subcategories/$subId',
         'http://localhost:5000/api/subcategories/$subId',
         'http://10.0.2.2:5000/api/subcategories/$subId',
       ];

@@ -1,4 +1,5 @@
 import 'skeleton_loader.dart';
+import 'r2_media_library_picker_modal.dart';
 
 import 'dart:typed_data';
 
@@ -365,7 +366,7 @@ class _MarketplaceBannersViewState extends State<MarketplaceBannersView> {
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
-                b.imageUrl,
+                CategoryBackendService.getDisplayableImageUrl(b.imageUrl),
                 width: 76,
                 height: 76,
                 fit: BoxFit.cover,
@@ -533,10 +534,10 @@ class _AddOrEditBannerModalBottomSheetState
 
     if (b != null) {
       if (b.targetType == 'category') {
-        _selectedCategoryId = b.targetId;
+        _selectedCategoryId = (b.targetId.isNotEmpty) ? b.targetId : null;
         _selectedCategoryName = b.targetName;
       } else if (b.targetType == 'product') {
-        _selectedProductId = b.targetId;
+        _selectedProductId = (b.targetId.isNotEmpty) ? b.targetId : null;
         _selectedProductName = b.targetName;
       }
     }
@@ -552,6 +553,8 @@ class _AddOrEditBannerModalBottomSheetState
     super.dispose();
   }
 
+  String? _selectedR2Url;
+
   void _pickImage() async {
     final f = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -564,8 +567,21 @@ class _AddOrEditBannerModalBottomSheetState
       setState(() {
         _newImageBytes = b;
         _newImageFileName = f.name;
+        _selectedR2Url = null;
       });
     }
+  }
+
+  void _openR2MediaLibrary() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+          _newImageBytes = null;
+        });
+      },
+    );
   }
 
   void _submit() async {
@@ -577,10 +593,10 @@ class _AddOrEditBannerModalBottomSheetState
       return;
     }
 
-    if (widget.bannerToEdit == null && _newImageBytes == null) {
+    if (widget.bannerToEdit == null && _newImageBytes == null && _selectedR2Url == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a banner image from gallery'),
+          content: Text('Please select or pick a banner image'),
         ),
       );
       return;
@@ -609,11 +625,25 @@ class _AddOrEditBannerModalBottomSheetState
         badge: _badgeCtrl.text.trim(),
         discountCode: _discountCodeCtrl.text.trim(),
         status: _status,
+        newImageUrl: _selectedR2Url,
         newImageBytes: _newImageBytes,
         newImageFileName: _newImageFileName,
       );
+    } else if (_selectedR2Url != null) {
+      // CREATE NEW BANNER WITH EXISTING R2 URL
+      ok = await BannersBackendService().createBannerWithUrl(
+        title: title,
+        subtitle: _subtitleCtrl.text.trim(),
+        targetType: _targetType,
+        targetId: targetId,
+        targetName: targetName,
+        buttonText: _btnTextCtrl.text.trim(),
+        badge: _badgeCtrl.text.trim(),
+        discountCode: _discountCodeCtrl.text.trim(),
+        imageUrl: _selectedR2Url!,
+      );
     } else {
-      // CREATE NEW BANNER
+      // CREATE NEW BANNER WITH NEW IMAGE
       ok = await BannersBackendService().createBanner(
         title: title,
         subtitle: _subtitleCtrl.text.trim(),
@@ -729,44 +759,69 @@ class _AddOrEditBannerModalBottomSheetState
                     color: const Color(0xFF6366F1).withValues(alpha: 0.35),
                   ),
                 ),
-                child: _newImageBytes != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.memory(_newImageBytes!, fit: BoxFit.cover),
-                      )
-                    : (isEditing && widget.bannerToEdit!.imageUrl.isNotEmpty
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: Image.network(
-                                widget.bannerToEdit!.imageUrl,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(
-                                  Icons.add_photo_alternate_rounded,
-                                  size: 28,
-                                  color: Color(0xFF6366F1),
+                child: _selectedR2Url != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.network(
+                        CategoryBackendService.getDisplayableImageUrl(_selectedR2Url!),
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : (_newImageBytes != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Image.memory(_newImageBytes!, fit: BoxFit.cover),
+                        )
+                      : (isEditing && widget.bannerToEdit!.imageUrl.isNotEmpty
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Image.network(
+                                  CategoryBackendService.getDisplayableImageUrl(widget.bannerToEdit!.imageUrl),
+                                  fit: BoxFit.cover,
                                 ),
-                                SizedBox(height: 6),
-                                Text(
-                                  'Select Banner Image from Gallery',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
+                              )
+                            : Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(
+                                    Icons.add_photo_alternate_rounded,
+                                    size: 28,
+                                    color: Color(0xFF6366F1),
                                   ),
-                                ),
-                                Text(
-                                  'Cloudflare R2 Bucket High-Res Upload',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Color(0xFF94A3B8),
+                                  SizedBox(height: 6),
+                                  Text(
+                                    'Select Banner Image from Gallery',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            )),
+                                  Text(
+                                    'Cloudflare R2 Bucket High-Res Upload',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ],
+                              ))),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openR2MediaLibrary,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  side: const BorderSide(color: Color(0xFF6366F1)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.cloud_done_rounded, size: 18, color: Color(0xFF6366F1)),
+                label: const Text(
+                  '+ Select from Cloudflare R2 Media Library',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF6366F1)),
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -842,86 +897,98 @@ class _AddOrEditBannerModalBottomSheetState
 
             // Target Selector Dropdown
             if (_targetType == 'category') ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value:
-                        _selectedCategoryId ??
-                        (categories.isNotEmpty
-                            ? categories.first.categoryId
-                            : null),
-                    items: categories
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c.categoryId,
-                            child: Text(
-                              c.name,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+              Builder(
+                builder: (context) {
+                  final hasCat = categories.any((c) => c.categoryId == _selectedCategoryId);
+                  final validCatId = hasCat ? _selectedCategoryId : (categories.isNotEmpty ? categories.first.categoryId : null);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: validCatId,
+                        items: categories
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c.categoryId,
+                                child: Text(
+                                  c.name,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedCategoryId = val;
-                        _selectedCategoryName = categories
-                            .firstWhere((c) => c.categoryId == val)
-                            .name;
-                      });
-                    },
-                  ),
-                ),
+                            )
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedCategoryId = val;
+                              _selectedCategoryName = categories
+                                  .firstWhere((c) => c.categoryId == val)
+                                  .name;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  );
+                },
               ),
             ] else ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value:
-                        _selectedProductId ??
-                        (products.isNotEmpty ? products.first.id : null),
-                    items: products
-                        .map(
-                          (p) => DropdownMenuItem(
-                            value: p.id,
-                            child: Text(
-                              p.title,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+              Builder(
+                builder: (context) {
+                  final hasProd = products.any((p) => p.id == _selectedProductId || p.productId == _selectedProductId);
+                  final validProdId = hasProd
+                      ? (products.firstWhere((p) => p.id == _selectedProductId || p.productId == _selectedProductId).id)
+                      : (products.isNotEmpty ? products.first.id : null);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: validProdId,
+                        items: products
+                            .map(
+                              (p) => DropdownMenuItem(
+                                value: p.id,
+                                child: Text(
+                                  p.title,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedProductId = val;
-                        _selectedProductName = products
-                            .firstWhere((p) => p.id == val)
-                            .title;
-                      });
-                    },
-                  ),
-                ),
+                            )
+                            .toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedProductId = val;
+                              _selectedProductName = products
+                                  .firstWhere((p) => p.id == val)
+                                  .title;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
             const SizedBox(height: 12),
@@ -973,20 +1040,23 @@ class _AddOrEditBannerModalBottomSheetState
             const SizedBox(height: 10),
 
             if (isEditing) ...[
-              SwitchListTile.adaptive(
-                title: Text(
-                  _status == 'Active'
-                      ? 'Status: Active (Visible on Shop)'
-                      : 'Status: Deactivated',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
+              Material(
+                color: Colors.transparent,
+                child: SwitchListTile.adaptive(
+                  title: Text(
+                    _status == 'Active'
+                        ? 'Status: Active (Visible on Shop)'
+                        : 'Status: Deactivated',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
                   ),
+                  value: _status == 'Active',
+                  activeTrackColor: const Color(0xFF10B981),
+                  onChanged: (v) =>
+                      setState(() => _status = v ? 'Active' : 'Deactivated'),
                 ),
-                value: _status == 'Active',
-                activeColor: const Color(0xFF10B981),
-                onChanged: (v) =>
-                    setState(() => _status = v ? 'Active' : 'Deactivated'),
               ),
               const SizedBox(height: 10),
             ],

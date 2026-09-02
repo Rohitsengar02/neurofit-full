@@ -27,7 +27,8 @@ const orderSchema = new mongoose.Schema({
   totalAmount: { type: Number, default: 0.0 },
   paymentMethod: { type: String, default: 'UPI' },
   paymentStatus: { type: String, default: 'Paid' },
-  orderStatus: { type: String, default: 'Placed' }
+  orderStatus: { type: String, default: 'Placed' },
+  cancellationReason: { type: String, default: '' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Order', orderSchema);
