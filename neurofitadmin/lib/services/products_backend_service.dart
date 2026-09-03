@@ -291,8 +291,7 @@ class ProductsBackendService extends ChangeNotifier {
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/products',
-      'http://localhost:5000/api/products',
-      'http://10.0.2.2:5000/api/products',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/products'),
     ];
 
     for (final url in backendUrls) {
@@ -361,8 +360,7 @@ class ProductsBackendService extends ChangeNotifier {
       // 1. Sync to MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/products',
-        'http://localhost:5000/api/products',
-        'http://10.0.2.2:5000/api/products',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/products'),
       ];
 
       for (final url in backendUrls) {
@@ -509,8 +507,7 @@ class ProductsBackendService extends ChangeNotifier {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/products/$productId',
-        'http://localhost:5000/api/products/$productId',
-        'http://10.0.2.2:5000/api/products/$productId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/products/$productId'),
       ];
 
       for (final url in backendUrls) {

@@ -214,7 +214,7 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
 
   void _initSocket() {
     try {
-      final socketUri = 'http://localhost:5000';
+      final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
         socketUri,
         IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
@@ -283,8 +283,7 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     // 1. Fetch from MongoDB Atlas Backend REST API
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/layout',
-      'http://localhost:5000/api/layout',
-      'http://10.0.2.2:5000/api/layout',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/layout'),
     ];
 
     for (final url in backendUrls) {
@@ -343,8 +342,7 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     try {
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/layout/${section.id}',
-        'http://localhost:5000/api/layout/${section.id}',
-        'http://10.0.2.2:5000/api/layout/${section.id}',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/layout/${section.id}'),
       ];
 
       for (final url in backendUrls) {
@@ -376,8 +374,7 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     try {
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/layout/$sectionId/status',
-        'http://localhost:5000/api/layout/$sectionId/status',
-        'http://10.0.2.2:5000/api/layout/$sectionId/status',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/layout/$sectionId/status'),
       ];
 
       for (final url in backendUrls) {
@@ -407,8 +404,7 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     try {
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/layout/$sectionId',
-        'http://localhost:5000/api/layout/$sectionId',
-        'http://10.0.2.2:5000/api/layout/$sectionId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/layout/$sectionId'),
       ];
 
       for (final url in backendUrls) {
@@ -446,8 +442,7 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
     try {
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/layout/reorder',
-        'http://localhost:5000/api/layout/reorder',
-        'http://10.0.2.2:5000/api/layout/reorder',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/layout/reorder'),
       ];
 
       for (final url in backendUrls) {

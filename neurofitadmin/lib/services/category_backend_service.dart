@@ -256,8 +256,7 @@ class CategoryBackendService extends ChangeNotifier {
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/categories',
-      'http://localhost:5000/api/categories',
-      'http://10.0.2.2:5000/api/categories',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/categories'),
     ];
 
     for (final url in backendUrls) {
@@ -315,8 +314,7 @@ class CategoryBackendService extends ChangeNotifier {
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/subcategories',
-      'http://localhost:5000/api/subcategories',
-      'http://10.0.2.2:5000/api/subcategories',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/subcategories'),
     ];
 
     for (final url in backendUrls) {
@@ -407,8 +405,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Upload via Express Backend API (Bypasses browser CORS completely)
       final backendUploadUrls = [
         '${ApiConstants.apiBaseUrl}/media/upload',
-        'http://localhost:5000/api/media/upload',
-        'http://10.0.2.2:5000/api/media/upload',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/media/upload'),
       ];
 
       for (final url in backendUploadUrls) {
@@ -487,8 +484,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Save to MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/categories',
-        'http://localhost:5000/api/categories',
-        'http://10.0.2.2:5000/api/categories',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/categories'),
       ];
 
       for (final url in backendUrls) {
@@ -569,8 +565,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Save to MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/subcategories',
-        'http://localhost:5000/api/subcategories',
-        'http://10.0.2.2:5000/api/subcategories',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/subcategories'),
       ];
 
       for (final url in backendUrls) {
@@ -647,8 +642,7 @@ class CategoryBackendService extends ChangeNotifier {
 
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/subcategories',
-        'http://localhost:5000/api/subcategories',
-        'http://10.0.2.2:5000/api/subcategories',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/subcategories'),
       ];
 
       for (final url in backendUrls) {
@@ -739,8 +733,7 @@ class CategoryBackendService extends ChangeNotifier {
 
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/categories',
-      'http://localhost:5000/api/categories',
-      'http://10.0.2.2:5000/api/categories',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/categories'),
     ];
 
     for (final url in backendUrls) {
@@ -793,8 +786,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Update in MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/categories/$id',
-        'http://localhost:5000/api/categories/$id',
-        'http://10.0.2.2:5000/api/categories/$id',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/categories/$id'),
       ];
 
       final updateMap = <String, dynamic>{'id': id};
@@ -856,8 +848,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/categories/$id',
-        'http://localhost:5000/api/categories/$id',
-        'http://10.0.2.2:5000/api/categories/$id',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/categories/$id'),
       ];
 
       for (final url in backendUrls) {
@@ -921,8 +912,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Update in MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/subcategories/$subId',
-        'http://localhost:5000/api/subcategories/$subId',
-        'http://10.0.2.2:5000/api/subcategories/$subId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/subcategories/$subId'),
       ];
 
       final updateMap = <String, dynamic>{'id': subId, 'parentCategoryId': parentCategoryId};
@@ -987,8 +977,7 @@ class CategoryBackendService extends ChangeNotifier {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/subcategories/$subId',
-        'http://localhost:5000/api/subcategories/$subId',
-        'http://10.0.2.2:5000/api/subcategories/$subId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/subcategories/$subId'),
       ];
 
       for (final url in backendUrls) {

@@ -100,7 +100,7 @@ class DiscountsBackendService extends ChangeNotifier {
   IO.Socket? _socket;
   void _initSocket() {
     try {
-      final socketUri = 'http://localhost:5000';
+      final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
         socketUri,
         IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
@@ -131,8 +131,7 @@ class DiscountsBackendService extends ChangeNotifier {
     // 1. Fetch from MongoDB Atlas Backend
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/discounts',
-      'http://localhost:5000/api/discounts',
-      'http://10.0.2.2:5000/api/discounts',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/discounts'),
     ];
 
     for (final url in backendUrls) {
@@ -216,8 +215,7 @@ class DiscountsBackendService extends ChangeNotifier {
       // 1. Sync to MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/discounts',
-        'http://localhost:5000/api/discounts',
-        'http://10.0.2.2:5000/api/discounts',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/discounts'),
       ];
 
       for (final url in backendUrls) {
@@ -320,8 +318,7 @@ class DiscountsBackendService extends ChangeNotifier {
       // 1. Delete from MongoDB Atlas Backend
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/discounts/$discountId',
-        'http://localhost:5000/api/discounts/$discountId',
-        'http://10.0.2.2:5000/api/discounts/$discountId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/discounts/$discountId'),
       ];
 
       for (final url in backendUrls) {
