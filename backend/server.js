@@ -79,6 +79,13 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/discounts', require('./routes/discountRoutes'));
 app.use('/api/subcategories', require('./routes/subCategoryRoutes'));
 app.use('/api/media', require('./routes/mediaRoutes'));
+app.use('/api/workout-layout', require('./routes/workoutLayoutRoutes'));
+app.use('/api/workouts', require('./routes/workoutRoutes'));
+app.use('/api/programs', require('./routes/programRoutes'));
+app.use('/api/exercises', require('./routes/exerciseRoutes'));
+app.use('/api/workout-categories', require('./routes/workoutCategoryRoutes'));
+app.use('/api/workout-banners', require('./routes/workoutBannerRoutes'));
+app.use('/api/exercise-categories', require('./routes/exerciseCategoryRoutes'));
 
 app.get('/', (req, res) => {
   res.send('⚡ NeuroFit Real-Time Express + Socket.io Backend API with MongoDB Atlas is Live!');

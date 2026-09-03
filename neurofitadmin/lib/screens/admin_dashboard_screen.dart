@@ -29,6 +29,8 @@ import '../widgets/fitness_workouts_view.dart';
 import '../widgets/fitness_exercises_view.dart';
 import '../widgets/fitness_programs_view.dart';
 import '../widgets/fitness_cms_view.dart';
+import '../widgets/fitness_workout_layout_view.dart';
+import '../widgets/fitness_workout_categories_view.dart';
 
 import '../widgets/nutrition_recipes_view.dart';
 import '../widgets/nutrition_food_items_view.dart';
@@ -203,6 +205,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       },
     ],
     'Fitness': [
+      {
+        'title': 'Workout Layout',
+        'icon': Icons.dashboard_customize_rounded,
+        'color': Color(0xFF10B981),
+      },
+      {
+        'title': 'Categories',
+        'icon': Icons.category_rounded,
+        'color': Color(0xFFF59E0B),
+      },
       {
         'title': 'Analytics',
         'icon': Icons.insights_rounded,
@@ -916,7 +928,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
 
     if (categoryName == 'Fitness') {
-      if (subActionTitle == 'Analytics' || subActionTitle == 'Fitness Analytics') {
+      if (subActionTitle == 'Workout Layout' || subActionTitle == 'Layout Studio') {
+        return FitnessWorkoutLayoutView(
+          selectedDateRange: _selectedDateRange,
+          fadeAnimations: _fadeAnimations,
+          slideAnimations: _slideAnimations,
+        );
+      } else if (subActionTitle == 'Categories' || subActionTitle == 'Workout Categories') {
+        return FitnessWorkoutCategoriesView(
+          selectedDateRange: _selectedDateRange,
+          fadeAnimations: _fadeAnimations,
+          slideAnimations: _slideAnimations,
+        );
+      } else if (subActionTitle == 'Analytics' || subActionTitle == 'Fitness Analytics') {
         return FitnessAnalyticsView(
           selectedDateRange: _selectedDateRange,
           fadeAnimations: _fadeAnimations,

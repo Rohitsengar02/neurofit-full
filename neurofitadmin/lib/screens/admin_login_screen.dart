@@ -56,8 +56,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   Future<bool> _verifyAdminWithBackend(String email, String password) async {
     final urls = [
       '${ApiConstants.apiBaseUrl}/admin/login',
-      'http://localhost:5000/api/admin/login',
-      'http://10.0.2.2:5000/api/admin/login',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/admin/login'),
     ];
 
     for (final url in urls) {

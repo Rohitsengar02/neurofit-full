@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:neurofitadmin/constants/api_constants.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/category_backend_service.dart';
 import 'skeleton_loader.dart';
@@ -52,8 +53,20 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
       'statusColor': const Color(0xFF10B981),
       'img': 'assets/images/workout_banner_1.png',
       'topProducts': [
-        {'name': '100% Whey Protein Isolate (2kg)', 'sales': '1.8K Sold', 'price': '₹4,499', 'stock': '142 in stock', 'img': 'assets/images/workout_banner_1.png'},
-        {'name': 'Micronized Creatine Monohydrate (300g)', 'sales': '3.1K Sold', 'price': '₹999', 'stock': '85 in stock', 'img': 'assets/images/hero_banner_4.png'},
+        {
+          'name': '100% Whey Protein Isolate (2kg)',
+          'sales': '1.8K Sold',
+          'price': '₹4,499',
+          'stock': '142 in stock',
+          'img': 'assets/images/workout_banner_1.png',
+        },
+        {
+          'name': 'Micronized Creatine Monohydrate (300g)',
+          'sales': '3.1K Sold',
+          'price': '₹999',
+          'stock': '85 in stock',
+          'img': 'assets/images/hero_banner_4.png',
+        },
       ],
     },
     {
@@ -79,7 +92,13 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
       'statusColor': const Color(0xFF10B981),
       'img': 'assets/images/athlete_transform_1787825621309.jpg',
       'topProducts': [
-        {'name': 'Hexagon Rubber Dumbbells (15kg)', 'sales': '640 Sold', 'price': '₹3,299', 'stock': '48 in stock', 'img': 'assets/images/athlete_transform_1787825621309.jpg'},
+        {
+          'name': 'Hexagon Rubber Dumbbells (15kg)',
+          'sales': '640 Sold',
+          'price': '₹3,299',
+          'stock': '48 in stock',
+          'img': 'assets/images/athlete_transform_1787825621309.jpg',
+        },
       ],
     },
     {
@@ -105,13 +124,21 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
       'statusColor': const Color(0xFF10B981),
       'img': 'assets/images/hero_banner_1.png',
       'topProducts': [
-        {'name': 'Seamless Dry-Fit Gym T-Shirt', 'sales': '2.4K Sold', 'price': '₹1,299', 'stock': '210 in stock', 'img': 'assets/images/hero_banner_1.png'},
+        {
+          'name': 'Seamless Dry-Fit Gym T-Shirt',
+          'sales': '2.4K Sold',
+          'price': '₹1,299',
+          'stock': '210 in stock',
+          'img': 'assets/images/hero_banner_1.png',
+        },
       ],
     },
   ];
 
   Widget _buildAnimatedSection(int index, Widget child) {
-    final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
+    final int safeIndex = index < widget.fadeAnimations.length
+        ? index
+        : widget.fadeAnimations.length - 1;
     return FadeTransition(
       opacity: widget.fadeAnimations[safeIndex],
       child: SlideTransition(
@@ -154,10 +181,38 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
 
   Widget _buildKpiCarousel() {
     final kpis = [
-      {'title': 'Active Vendors', 'val': '14 Stores', 'growth': '+2 Onboarded', 'icon': Icons.store_mall_directory_rounded, 'color': const Color(0xFF16A34A), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Total Vendor GMV', 'val': '₹29.5 Lakhs', 'growth': '+21.4% growth', 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Platform Fees', 'val': '₹3.67 Lakhs', 'growth': '12.4% avg cut', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Vendor Rating', 'val': '4.91 ★', 'growth': '99.2% SLA met', 'icon': Icons.star_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {
+        'title': 'Active Vendors',
+        'val': '14 Stores',
+        'growth': '+2 Onboarded',
+        'icon': Icons.store_mall_directory_rounded,
+        'color': const Color(0xFF16A34A),
+        'bg': const Color(0xFFECFDF5),
+      },
+      {
+        'title': 'Total Vendor GMV',
+        'val': '₹29.5 Lakhs',
+        'growth': '+21.4% growth',
+        'icon': Icons.account_balance_wallet_rounded,
+        'color': const Color(0xFF3B82F6),
+        'bg': const Color(0xFFEFF6FF),
+      },
+      {
+        'title': 'Platform Fees',
+        'val': '₹3.67 Lakhs',
+        'growth': '12.4% avg cut',
+        'icon': Icons.monetization_on_rounded,
+        'color': const Color(0xFFF59E0B),
+        'bg': const Color(0xFFFFFBEB),
+      },
+      {
+        'title': 'Vendor Rating',
+        'val': '4.91 ★',
+        'growth': '99.2% SLA met',
+        'icon': Icons.star_rounded,
+        'color': const Color(0xFF8B5CF6),
+        'bg': const Color(0xFFF5F3FF),
+      },
     ];
 
     return SingleChildScrollView(
@@ -174,22 +229,66 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [BoxShadow(color: color.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: k['bg'] as Color, borderRadius: BorderRadius.circular(8)), child: Icon(k['icon'] as IconData, color: color, size: 14)),
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: k['bg'] as Color,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        k['icon'] as IconData,
+                        color: color,
+                        size: 14,
+                      ),
+                    ),
                     const SizedBox(width: 6),
-                    Expanded(child: Text(k['title'] as String, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    Expanded(
+                      child: Text(
+                        k['title'] as String,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF64748B),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(k['val'] as String, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                Text(
+                  k['val'] as String,
+                  style: const TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(k['growth'] as String, style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  k['growth'] as String,
+                  style: TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           );
@@ -202,7 +301,11 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Row(
         children: [
           const Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
@@ -210,8 +313,16 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
           Expanded(
             child: TextField(
               onChanged: (val) => setState(() => _searchQuery = val),
-              style: const TextStyle(fontSize: 11.5, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
-              decoration: const InputDecoration(hintText: 'Search vendors, brands, categories...', border: InputBorder.none, isDense: true),
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: const InputDecoration(
+                hintText: 'Search vendors, brands, categories...',
+                border: InputBorder.none,
+                isDense: true,
+              ),
             ),
           ),
         ],
@@ -234,7 +345,13 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 3))],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -251,7 +368,15 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
                           width: 48,
                           height: 48,
                           fit: BoxFit.cover,
-                          errorBuilder: (c, e, s) => Container(width: 48, height: 48, color: const Color(0xFFECFDF5), child: const Icon(Icons.store, color: Color(0xFF16A34A))),
+                          errorBuilder: (c, e, s) => Container(
+                            width: 48,
+                            height: 48,
+                            color: const Color(0xFFECFDF5),
+                            child: const Icon(
+                              Icons.store,
+                              color: Color(0xFF16A34A),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -264,25 +389,55 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
                                 Flexible(
                                   child: Text(
                                     v['name'] as String,
-                                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: Color(0xFF0F172A),
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-                                const Icon(Icons.verified_rounded, size: 14, color: Color(0xFF10B981)),
+                                const Icon(
+                                  Icons.verified_rounded,
+                                  size: 14,
+                                  color: Color(0xFF10B981),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 2),
-                            Text(v['category'] as String, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text(
+                              v['category'] as String,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(color: v['tierBg'] as Color, borderRadius: BorderRadius.circular(8)),
-                        child: Text(v['tier'] as String, style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: v['tierColor'] as Color)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: v['tierBg'] as Color,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          v['tier'] as String,
+                          style: TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w900,
+                            color: v['tierColor'] as Color,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -292,15 +447,40 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
                     child: Row(
                       children: [
-                        Expanded(child: _buildInlineMetric('Catalog SKUs', '${v['skusCount']} Items', const Color(0xFF3B82F6))),
+                        Expanded(
+                          child: _buildInlineMetric(
+                            'Catalog SKUs',
+                            '${v['skusCount']} Items',
+                            const Color(0xFF3B82F6),
+                          ),
+                        ),
                         _buildInlineDivider(),
-                        Expanded(child: _buildInlineMetric('Gross Sales', v['grossSales'] as String, const Color(0xFF10B981))),
+                        Expanded(
+                          child: _buildInlineMetric(
+                            'Gross Sales',
+                            v['grossSales'] as String,
+                            const Color(0xFF10B981),
+                          ),
+                        ),
                         _buildInlineDivider(),
-                        Expanded(child: _buildInlineMetric('Platform Fee', v['commission'] as String, const Color(0xFFF59E0B))),
+                        Expanded(
+                          child: _buildInlineMetric(
+                            'Platform Fee',
+                            v['commission'] as String,
+                            const Color(0xFFF59E0B),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -312,14 +492,32 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
                   padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFAFAFA),
-                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                    border: Border(top: BorderSide(color: Colors.grey.shade100)),
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(20),
+                    ),
+                    border: Border(
+                      top: BorderSide(color: Colors.grey.shade100),
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Rating: ${v['rating']} (${v['reviews']})', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFFF59E0B))),
-                      const Text('View Store Profile →', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF16A34A))),
+                      Text(
+                        'Rating: ${v['rating']} (${v['reviews']})',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFFF59E0B),
+                        ),
+                      ),
+                      const Text(
+                        'View Store Profile →',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF16A34A),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -335,8 +533,27 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        FittedBox(fit: BoxFit.scaleDown, child: Text(val, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: color))),
-        Text(label, style: const TextStyle(fontSize: 7.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            val,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 7.5,
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }
@@ -352,10 +569,12 @@ class _VendorDetailBottomSheet extends StatefulWidget {
   const _VendorDetailBottomSheet({required this.vendor});
 
   @override
-  State<_VendorDetailBottomSheet> createState() => _VendorDetailBottomSheetState();
+  State<_VendorDetailBottomSheet> createState() =>
+      _VendorDetailBottomSheetState();
 }
 
-class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with SingleTickerProviderStateMixin {
+class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet>
+    with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
 
   @override
@@ -377,11 +596,21 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.88,
-      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       child: Column(
         children: [
           const SizedBox(height: 10),
-          Container(width: 44, height: 5, decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(10))),
+          Container(
+            width: 44,
+            height: 5,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE2E8F0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
           const SizedBox(height: 12),
 
           Padding(
@@ -390,20 +619,50 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: Image.asset(v['img'] as String, width: 52, height: 52, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.store, size: 30)),
+                  child: Image.asset(
+                    v['img'] as String,
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.cover,
+                    errorBuilder: (c, e, s) =>
+                        const Icon(Icons.store, size: 30),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(v['name'] as String, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                      Text(v['category'] as String, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                      Text('Contact: ${v['contactPerson']}', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF10B981))),
+                      Text(
+                        v['name'] as String,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        v['category'] as String,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                      Text(
+                        'Contact: ${v['contactPerson']}',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, size: 18)),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                ),
               ],
             ),
           ),
@@ -415,7 +674,10 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
             unselectedLabelColor: const Color(0xFF64748B),
             indicatorColor: const Color(0xFF16A34A),
             indicatorWeight: 2.5,
-            labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+            labelStyle: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
             tabs: const [
               Tab(text: 'Financials & GMV'),
               Tab(text: 'Catalog SKUs'),
@@ -434,20 +696,46 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildStatBox('Gross GMV', v['grossSales'] as String, const Color(0xFF10B981)),
-                        _buildStatBox('Platform Cut', v['commissionEarned'] as String, const Color(0xFFF59E0B)),
-                        _buildStatBox('Orders', v['ordersFulfilled'] as String, const Color(0xFF8B5CF6)),
-                        _buildStatBox('Refund Rate', v['refundRate'] as String, const Color(0xFF3B82F6)),
+                        _buildStatBox(
+                          'Gross GMV',
+                          v['grossSales'] as String,
+                          const Color(0xFF10B981),
+                        ),
+                        _buildStatBox(
+                          'Platform Cut',
+                          v['commissionEarned'] as String,
+                          const Color(0xFFF59E0B),
+                        ),
+                        _buildStatBox(
+                          'Orders',
+                          v['ordersFulfilled'] as String,
+                          const Color(0xFF8B5CF6),
+                        ),
+                        _buildStatBox(
+                          'Refund Rate',
+                          v['refundRate'] as String,
+                          const Color(0xFF3B82F6),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 14),
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
                       child: Column(
                         children: [
-                          _buildDetailRow('Settlement Cycle', 'Weekly Direct Bank Wire'),
-                          _buildDetailRow('Platform Commission', v['commission'] as String),
+                          _buildDetailRow(
+                            'Settlement Cycle',
+                            'Weekly Direct Bank Wire',
+                          ),
+                          _buildDetailRow(
+                            'Platform Commission',
+                            v['commission'] as String,
+                          ),
                           _buildDetailRow('GSTIN Tax ID', '27AABCN8921M1Z4'),
                         ],
                       ),
@@ -463,21 +751,55 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
                       child: Row(
                         children: [
-                          ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.asset(p['img'] as String, width: 42, height: 42, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag))),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.asset(
+                              p['img'] as String,
+                              width: 42,
+                              height: 42,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) =>
+                                  const Icon(Icons.shopping_bag),
+                            ),
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(p['name'] as String, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                                Text('${p['sales']} • ${p['stock']}', style: const TextStyle(fontSize: 9, color: Color(0xFF64748B))),
+                                Text(
+                                  p['name'] as String,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                                Text(
+                                  '${p['sales']} • ${p['stock']}',
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Text(p['price'] as String, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF10B981))),
+                          Text(
+                            p['price'] as String,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
                         ],
                       ),
                     );
@@ -489,12 +811,25 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
                   children: [
                     Container(
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
                       child: Column(
                         children: [
-                          _buildDetailRow('Avg Fulfillment Time', v['avgFulfillmentTime'] as String),
-                          _buildDetailRow('Customer Refund Rate', v['refundRate'] as String),
-                          _buildDetailRow('On-Time Delivery SLA', '99.4% SLA Score'),
+                          _buildDetailRow(
+                            'Avg Fulfillment Time',
+                            v['avgFulfillmentTime'] as String,
+                          ),
+                          _buildDetailRow(
+                            'Customer Refund Rate',
+                            v['refundRate'] as String,
+                          ),
+                          _buildDetailRow(
+                            'On-Time Delivery SLA',
+                            '99.4% SLA Score',
+                          ),
                         ],
                       ),
                     ),
@@ -512,13 +847,34 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
     return Container(
       width: 74,
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withOpacity(0.2))),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 8, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 8,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 2),
-          FittedBox(fit: BoxFit.scaleDown, child: Text(val, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: color))),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              val,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -530,8 +886,22 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet> with
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-          Text(val, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF1E293B))),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          Text(
+            val,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E293B),
+            ),
+          ),
         ],
       ),
     );
@@ -554,7 +924,8 @@ class MarketplaceCustomersView extends StatefulWidget {
   });
 
   @override
-  State<MarketplaceCustomersView> createState() => _MarketplaceCustomersViewState();
+  State<MarketplaceCustomersView> createState() =>
+      _MarketplaceCustomersViewState();
 }
 
 class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
@@ -587,10 +958,13 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
 
   void _initSocket() {
     try {
-      final socketUri = 'http://localhost:5000';
+      final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
         socketUri,
-        IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
+        IO.OptionBuilder()
+            .setTransports(['websocket', 'polling'])
+            .disableAutoConnect()
+            .build(),
       );
 
       _socket?.connect();
@@ -608,26 +982,25 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     List<Map<String, dynamic>> fetchedUsers = [];
     List<Map<String, dynamic>> fetchedOrders = [];
 
-    final candidateUsersUrls = [
-      'http://localhost:5000/api/users',
-      'http://192.168.1.34:5000/api/users',
-      'http://10.0.2.2:5000/api/users',
-    ];
-
-    final candidateOrdersUrls = [
-      'http://localhost:5000/api/orders',
-      'http://192.168.1.34:5000/api/orders',
-      'http://10.0.2.2:5000/api/orders',
-    ];
+    final candidateUsersUrls = ApiConstants.candidateBaseUrls
+        .map((b) => '$b/api/users')
+        .toList();
+    final candidateOrdersUrls = ApiConstants.candidateBaseUrls
+        .map((b) => '$b/api/orders')
+        .toList();
 
     // 1. Fetch Users
     for (final url in candidateUsersUrls) {
       try {
-        final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+        final res = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 3));
         if (res.statusCode == 200) {
           final body = jsonDecode(res.body);
           final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedUsers = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          fetchedUsers = raw
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
           break;
         }
       } catch (_) {}
@@ -636,11 +1009,15 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     // 2. Fetch Orders
     for (final url in candidateOrdersUrls) {
       try {
-        final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+        final res = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 3));
         if (res.statusCode == 200) {
           final body = jsonDecode(res.body);
           final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedOrders = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          fetchedOrders = raw
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
           break;
         }
       } catch (_) {}
@@ -650,7 +1027,11 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     final Map<String, List<Map<String, dynamic>>> ordersByUid = {};
     for (final order in fetchedOrders) {
       final uid = (order['uid'] ?? order['userId'] ?? '').toString();
-      final phone = (order['shippingAddress']?['phoneNumber'] ?? order['phoneNumber'] ?? '').toString();
+      final phone =
+          (order['shippingAddress']?['phoneNumber'] ??
+                  order['phoneNumber'] ??
+                  '')
+              .toString();
 
       final key = uid.isNotEmpty ? uid : phone;
       if (key.isNotEmpty) {
@@ -667,10 +1048,19 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
       final uid = (user['uid'] ?? user['_id'] ?? '').toString();
       final email = (user['email'] ?? '').toString();
       final phone = (user['phoneNumber'] ?? user['phone'] ?? '').toString();
-      final name = (user['name'] ?? user['displayName'] ?? user['fullName'] ?? 'Athlete Customer').toString();
-      final photoUrl = (user['photoUrl'] ?? user['avatar'] ?? user['profileImage'] ?? '').toString();
+      final name =
+          (user['name'] ??
+                  user['displayName'] ??
+                  user['fullName'] ??
+                  'Athlete Customer')
+              .toString();
+      final photoUrl =
+          (user['photoUrl'] ?? user['avatar'] ?? user['profileImage'] ?? '')
+              .toString();
 
-      final userOrders = ordersByUid[uid] ?? (phone.isNotEmpty ? (ordersByUid[phone] ?? []) : []);
+      final userOrders =
+          ordersByUid[uid] ??
+          (phone.isNotEmpty ? (ordersByUid[phone] ?? []) : []);
 
       // Only show customers who bought products (ordersCount > 0)
       if (userOrders.isEmpty) continue;
@@ -712,9 +1102,11 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
         'tierBg': tierBg,
         'orders': userOrders,
         'latestOrder': userOrders.isNotEmpty
-            ? (userOrders.first['items'] is List && (userOrders.first['items'] as List).isNotEmpty
-                ? userOrders.first['items'][0]['title'] ?? 'Order #${userOrders.first['orderId']}'
-                : 'Order #${userOrders.first['orderId']}')
+            ? (userOrders.first['items'] is List &&
+                      (userOrders.first['items'] as List).isNotEmpty
+                  ? userOrders.first['items'][0]['title'] ??
+                        'Order #${userOrders.first['orderId']}'
+                  : 'Order #${userOrders.first['orderId']}')
             : 'No orders yet',
       });
 
@@ -726,9 +1118,19 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     ordersByUid.forEach((key, orders) {
       if (!processedKeys.contains(key)) {
         final firstOrder = orders.first;
-        final addr = firstOrder['shippingAddress'] is Map ? firstOrder['shippingAddress'] : {};
-        final name = addr['fullName'] ?? addr['name'] ?? firstOrder['customerName'] ?? 'Shopper Guest';
-        final phone = addr['phoneNumber'] ?? addr['phone'] ?? firstOrder['phoneNumber'] ?? '';
+        final addr = firstOrder['shippingAddress'] is Map
+            ? firstOrder['shippingAddress']
+            : {};
+        final name =
+            addr['fullName'] ??
+            addr['name'] ??
+            firstOrder['customerName'] ??
+            'Shopper Guest';
+        final phone =
+            addr['phoneNumber'] ??
+            addr['phone'] ??
+            firstOrder['phoneNumber'] ??
+            '';
         final email = addr['email'] ?? firstOrder['email'] ?? '';
         final city = addr['city'] ?? 'India';
 
@@ -747,19 +1149,28 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
           'ordersCount': orders.length,
           'totalSpend': totalSpend,
           'tier': totalSpend > 5000 ? '⭐ Gold Member' : '🥈 Silver Member',
-          'tierColor': totalSpend > 5000 ? const Color(0xFF8B5CF6) : const Color(0xFF3B82F6),
-          'tierBg': totalSpend > 5000 ? const Color(0xFFF5F3FF) : const Color(0xFFEFF6FF),
+          'tierColor': totalSpend > 5000
+              ? const Color(0xFF8B5CF6)
+              : const Color(0xFF3B82F6),
+          'tierBg': totalSpend > 5000
+              ? const Color(0xFFF5F3FF)
+              : const Color(0xFFEFF6FF),
           'orders': orders,
           'latestOrder': orders.isNotEmpty
-              ? (orders.first['items'] is List && (orders.first['items'] as List).isNotEmpty
-                  ? orders.first['items'][0]['title'] ?? 'Order #${orders.first['orderId']}'
-                  : 'Order #${orders.first['orderId']}')
+              ? (orders.first['items'] is List &&
+                        (orders.first['items'] as List).isNotEmpty
+                    ? orders.first['items'][0]['title'] ??
+                          'Order #${orders.first['orderId']}'
+                    : 'Order #${orders.first['orderId']}')
               : 'No orders',
         });
       }
     });
 
-    customerProfiles.sort((a, b) => (b['totalSpend'] as double).compareTo(a['totalSpend'] as double));
+    customerProfiles.sort(
+      (a, b) =>
+          (b['totalSpend'] as double).compareTo(a['totalSpend'] as double),
+    );
 
     if (mounted) {
       setState(() {
@@ -786,24 +1197,33 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
       final phone = (c['phone'] ?? '').toString().toLowerCase();
       final city = (c['city'] ?? '').toString().toLowerCase();
 
-      final matchesSearch = _searchQuery.isEmpty ||
+      final matchesSearch =
+          _searchQuery.isEmpty ||
           name.contains(_searchQuery.toLowerCase()) ||
           email.contains(_searchQuery.toLowerCase()) ||
           phone.contains(_searchQuery.toLowerCase()) ||
           city.contains(_searchQuery.toLowerCase());
 
       final tier = (c['tier'] ?? '').toString();
-      final matchesTier = _selectedTierFilter == 'All' || tier.contains(_selectedTierFilter.replaceAll(RegExp(r'[^\w\s]'), '').trim());
+      final matchesTier =
+          _selectedTierFilter == 'All' ||
+          tier.contains(
+            _selectedTierFilter.replaceAll(RegExp(r'[^\w\s]'), '').trim(),
+          );
 
       return matchesSearch && matchesTier;
     }).toList();
 
-    int totalBuyers = _customers.where((c) => (c['ordersCount'] as int) > 0).length;
+    int totalBuyers = _customers
+        .where((c) => (c['ordersCount'] as int) > 0)
+        .length;
     double totalRevenue = 0.0;
     for (final c in _customers) {
       totalRevenue += (c['totalSpend'] as double);
     }
-    double avgSpend = _customers.isNotEmpty ? totalRevenue / _customers.length : 0.0;
+    double avgSpend = _customers.isNotEmpty
+        ? totalRevenue / _customers.length
+        : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,10 +1257,16 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                          color: const Color(
+                            0xFF6366F1,
+                          ).withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.people_alt_rounded, color: Color(0xFF818CF8), size: 22),
+                        child: const Icon(
+                          Icons.people_alt_rounded,
+                          color: Color(0xFF818CF8),
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Column(
@@ -848,19 +1274,31 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
                         children: [
                           const Text(
                             'Marketplace Customers Feed',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             '${_customers.length} Athletes • $totalBuyers Product Buyers',
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF94A3B8),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ],
                       ),
                     ],
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh_rounded, color: Colors.white70, size: 20),
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      color: Colors.white70,
+                      size: 20,
+                    ),
                     onPressed: () => _fetchRealCustomers(),
                   ),
                 ],
@@ -873,15 +1311,24 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.15),
+                  ),
                 ),
                 child: TextField(
                   onChanged: (v) => setState(() => _searchQuery = v),
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                   decoration: const InputDecoration(
                     hintText: 'Search customer name, email, phone or city...',
-                    hintStyle: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
-                    prefixIcon: Icon(Icons.search_rounded, size: 16, color: Color(0xFF94A3B8)),
+                    hintStyle: TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF94A3B8),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      size: 16,
+                      color: Color(0xFF94A3B8),
+                    ),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.symmetric(vertical: 10),
                   ),
@@ -901,17 +1348,28 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
                         onTap: () => setState(() => _selectedTierFilter = tf),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
-                            color: isSel ? const Color(0xFF6366F1) : Colors.white.withValues(alpha: 0.08),
+                            color: isSel
+                                ? const Color(0xFF6366F1)
+                                : Colors.white.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: isSel ? Colors.transparent : Colors.white.withValues(alpha: 0.15)),
+                            border: Border.all(
+                              color: isSel
+                                  ? Colors.transparent
+                                  : Colors.white.withValues(alpha: 0.15),
+                            ),
                           ),
                           child: Text(
                             tf,
                             style: TextStyle(
                               fontSize: 11,
-                              fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
+                              fontWeight: isSel
+                                  ? FontWeight.w900
+                                  : FontWeight.w600,
                               color: isSel ? Colors.white : Colors.white70,
                             ),
                           ),
@@ -932,10 +1390,38 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
           physics: const BouncingScrollPhysics(),
           child: Row(
             children: [
-              _buildKpiCard('Total Athletes', '${_customers.length}', 'Registered users', Icons.people_alt_rounded, const Color(0xFF6366F1), const Color(0xFFEEF2FF)),
-              _buildKpiCard('Product Buyers', '$totalBuyers', 'Placed real orders', Icons.shopping_bag_rounded, const Color(0xFF10B981), const Color(0xFFDCFCE7)),
-              _buildKpiCard('Total Revenue', '₹${totalRevenue.toStringAsFixed(0)}', 'All time customer spend', Icons.account_balance_wallet_rounded, const Color(0xFFF59E0B), const Color(0xFFFFFBEB)),
-              _buildKpiCard('Avg Customer Value', '₹${avgSpend.toStringAsFixed(0)}', 'Per user spend', Icons.trending_up_rounded, const Color(0xFF0284C7), const Color(0xFFE0F2FE)),
+              _buildKpiCard(
+                'Total Athletes',
+                '${_customers.length}',
+                'Registered users',
+                Icons.people_alt_rounded,
+                const Color(0xFF6366F1),
+                const Color(0xFFEEF2FF),
+              ),
+              _buildKpiCard(
+                'Product Buyers',
+                '$totalBuyers',
+                'Placed real orders',
+                Icons.shopping_bag_rounded,
+                const Color(0xFF10B981),
+                const Color(0xFFDCFCE7),
+              ),
+              _buildKpiCard(
+                'Total Revenue',
+                '₹${totalRevenue.toStringAsFixed(0)}',
+                'All time customer spend',
+                Icons.account_balance_wallet_rounded,
+                const Color(0xFFF59E0B),
+                const Color(0xFFFFFBEB),
+              ),
+              _buildKpiCard(
+                'Avg Customer Value',
+                '₹${avgSpend.toStringAsFixed(0)}',
+                'Per user spend',
+                Icons.trending_up_rounded,
+                const Color(0xFF0284C7),
+                const Color(0xFFE0F2FE),
+              ),
             ],
           ),
         ),
@@ -948,14 +1434,32 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(36),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE2E8F0))),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
             child: Column(
               children: const [
-                Icon(Icons.person_off_outlined, size: 42, color: Color(0xFF94A3B8)),
+                Icon(
+                  Icons.person_off_outlined,
+                  size: 42,
+                  color: Color(0xFF94A3B8),
+                ),
                 SizedBox(height: 10),
-                Text('No Customers Found', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF0F172A))),
+                Text(
+                  'No Customers Found',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
                 SizedBox(height: 4),
-                Text('Registered users who purchase products will stream here in real-time.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                Text(
+                  'Registered users who purchase products will stream here in real-time.',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                ),
               ],
             ),
           )
@@ -974,7 +1478,14 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     );
   }
 
-  Widget _buildKpiCard(String title, String val, String sub, IconData icon, Color color, Color bg) {
+  Widget _buildKpiCard(
+    String title,
+    String val,
+    String sub,
+    IconData icon,
+    Color color,
+    Color bg,
+  ) {
     return Container(
       width: 145,
       margin: const EdgeInsets.only(right: 10),
@@ -983,22 +1494,62 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: color, size: 14)),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 14),
+              ),
               const SizedBox(width: 6),
-              Expanded(child: Text(title, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF64748B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
-          Text(val, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(
+            val,
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(sub, style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: color), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(
+            sub,
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -1024,7 +1575,13 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 3))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1036,31 +1593,72 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
                   Container(
                     width: 44,
                     height: 44,
-                    decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                    ),
                     clipBehavior: Clip.antiAlias,
                     child: avatar.isNotEmpty
                         ? Image.network(
-                            CategoryBackendService.getDisplayableImageUrl(avatar),
+                            CategoryBackendService.getDisplayableImageUrl(
+                              avatar,
+                            ),
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Color(0xFF64748B)),
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.person_rounded,
+                              color: Color(0xFF64748B),
+                            ),
                           )
-                        : const Icon(Icons.person_rounded, color: Color(0xFF64748B)),
+                        : const Icon(
+                            Icons.person_rounded,
+                            color: Color(0xFF64748B),
+                          ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        Text('$email ${phone.isNotEmpty && phone != "No Phone" ? "• $phone" : ""} • $city', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '$email ${phone.isNotEmpty && phone != "No Phone" ? "• $phone" : ""} • $city',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF64748B),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: tierBg, borderRadius: BorderRadius.circular(8)),
-                    child: Text(tier, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: tierColor)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: tierBg,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      tier,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        color: tierColor,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1069,15 +1667,48 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE2E8F0))),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
                 child: Row(
                   children: [
-                    Expanded(child: _buildMetric('Orders Placed', '$ordersCount', const Color(0xFF3B82F6))),
-                    Container(width: 1, height: 22, color: const Color(0xFFE2E8F0)),
-                    Expanded(child: _buildMetric('Total Spent', '₹${totalSpend.toStringAsFixed(0)}', const Color(0xFF10B981))),
-                    Container(width: 1, height: 22, color: const Color(0xFFE2E8F0)),
-                    Expanded(child: _buildMetric('Avg Order', '₹${ordersCount > 0 ? (totalSpend / ordersCount).toStringAsFixed(0) : 0}', const Color(0xFF8B5CF6))),
+                    Expanded(
+                      child: _buildMetric(
+                        'Orders Placed',
+                        '$ordersCount',
+                        const Color(0xFF3B82F6),
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 22,
+                      color: const Color(0xFFE2E8F0),
+                    ),
+                    Expanded(
+                      child: _buildMetric(
+                        'Total Spent',
+                        '₹${totalSpend.toStringAsFixed(0)}',
+                        const Color(0xFF10B981),
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 22,
+                      color: const Color(0xFFE2E8F0),
+                    ),
+                    Expanded(
+                      child: _buildMetric(
+                        'Avg Order',
+                        '₹${ordersCount > 0 ? (totalSpend / ordersCount).toStringAsFixed(0) : 0}',
+                        const Color(0xFF8B5CF6),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1088,19 +1719,43 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
               decoration: const BoxDecoration(
                 color: Color(0xFFFAFAFA),
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
                 border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(child: Text('Latest: $latestOrder', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Expanded(
+                    child: Text(
+                      'Latest: $latestOrder',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   const Row(
                     children: [
-                      Text('View Orders & Profile', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF6366F1))),
+                      Text(
+                        'View Orders & Profile',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF6366F1),
+                        ),
+                      ),
                       SizedBox(width: 3),
-                      Icon(Icons.chevron_right_rounded, size: 14, color: Color(0xFF6366F1)),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 14,
+                        color: Color(0xFF6366F1),
+                      ),
                     ],
                   ),
                 ],
@@ -1116,8 +1771,27 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        FittedBox(fit: BoxFit.scaleDown, child: Text(val, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color))),
-        Text(label, style: const TextStyle(fontSize: 8, color: Color(0xFF64748B), fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            val,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 8,
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }
@@ -1152,7 +1826,14 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 10),
-          Container(width: 44, height: 4.5, decoration: BoxDecoration(color: const Color(0xFFE2E8F0), borderRadius: BorderRadius.circular(10))),
+          Container(
+            width: 44,
+            height: 4.5,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE2E8F0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
           const SizedBox(height: 12),
 
           Padding(
@@ -1162,33 +1843,73 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
                 Container(
                   width: 52,
                   height: 52,
-                  decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    shape: BoxShape.circle,
+                  ),
                   clipBehavior: Clip.antiAlias,
                   child: avatar.isNotEmpty
                       ? Image.network(
                           CategoryBackendService.getDisplayableImageUrl(avatar),
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, size: 28, color: Color(0xFF64748B)),
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person_rounded,
+                            size: 28,
+                            color: Color(0xFF64748B),
+                          ),
                         )
-                      : const Icon(Icons.person_rounded, size: 28, color: Color(0xFF64748B)),
+                      : const Icon(
+                          Icons.person_rounded,
+                          size: 28,
+                          color: Color(0xFF64748B),
+                        ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                      Text('$email • $phone', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        '$email • $phone',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(color: tierBg, borderRadius: BorderRadius.circular(6)),
-                        child: Text(tier, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: tierColor)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: tierBg,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          tier,
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: tierColor,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
-                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
               ],
             ),
           ),
@@ -1205,9 +1926,21 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildStatBox('Total Spend', '₹${totalSpend.toStringAsFixed(0)}', const Color(0xFF10B981)),
-                      _buildStatBox('Orders Count', '$ordersCount', const Color(0xFF3B82F6)),
-                      _buildStatBox('Avg Order Value', '₹${ordersCount > 0 ? (totalSpend / ordersCount).toStringAsFixed(0) : 0}', const Color(0xFF8B5CF6)),
+                      _buildStatBox(
+                        'Total Spend',
+                        '₹${totalSpend.toStringAsFixed(0)}',
+                        const Color(0xFF10B981),
+                      ),
+                      _buildStatBox(
+                        'Orders Count',
+                        '$ordersCount',
+                        const Color(0xFF3B82F6),
+                      ),
+                      _buildStatBox(
+                        'Avg Order Value',
+                        '₹${ordersCount > 0 ? (totalSpend / ordersCount).toStringAsFixed(0) : 0}',
+                        const Color(0xFF8B5CF6),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -1216,8 +1949,22 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Purchased Orders History', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                      Text('${orders.length} Orders', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B))),
+                      const Text(
+                        'Purchased Orders History',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        '${orders.length} Orders',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -1225,19 +1972,42 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
                   if (orders.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE2E8F0))),
-                      child: const Center(child: Text('No orders placed yet by this athlete.', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)))),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'No orders placed yet by this athlete.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
                     )
                   else
                     ...orders.map((o) {
                       final orderMap = Map<String, dynamic>.from(o as Map);
-                      final orderId = orderMap['orderId'] ?? orderMap['id'] ?? 'NF-ORD';
-                      final status = orderMap['orderStatus'] ?? orderMap['status'] ?? 'Placed';
-                      final double amount = (orderMap['totalAmount'] as num?)?.toDouble() ?? 0.0;
+                      final orderId =
+                          orderMap['orderId'] ?? orderMap['id'] ?? 'NF-ORD';
+                      final status =
+                          orderMap['orderStatus'] ??
+                          orderMap['status'] ??
+                          'Placed';
+                      final double amount =
+                          (orderMap['totalAmount'] as num?)?.toDouble() ?? 0.0;
 
-                      final List items = orderMap['items'] is List ? orderMap['items'] : [];
-                      final firstItem = items.isNotEmpty ? Map<String, dynamic>.from(items.first as Map) : null;
-                      final String img = firstItem != null ? (firstItem['image'] ?? firstItem['imageUrl'] ?? '') : '';
+                      final List items = orderMap['items'] is List
+                          ? orderMap['items']
+                          : [];
+                      final firstItem = items.isNotEmpty
+                          ? Map<String, dynamic>.from(items.first as Map)
+                          : null;
+                      final String img = firstItem != null
+                          ? (firstItem['image'] ?? firstItem['imageUrl'] ?? '')
+                          : '';
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -1252,27 +2022,63 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
                             Container(
                               width: 44,
                               height: 44,
-                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFE2E8F0))),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
+                              ),
                               clipBehavior: Clip.antiAlias,
                               child: img.isNotEmpty
                                   ? Image.network(
-                                      CategoryBackendService.getDisplayableImageUrl(img),
+                                      CategoryBackendService.getDisplayableImageUrl(
+                                        img,
+                                      ),
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(Icons.shopping_bag_rounded, size: 18, color: Color(0xFF64748B)),
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.shopping_bag_rounded,
+                                        size: 18,
+                                        color: Color(0xFF64748B),
+                                      ),
                                     )
-                                  : const Icon(Icons.shopping_bag_rounded, size: 18, color: Color(0xFF64748B)),
+                                  : const Icon(
+                                      Icons.shopping_bag_rounded,
+                                      size: 18,
+                                      color: Color(0xFF64748B),
+                                    ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Order #$orderId', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                                  Text('${items.length} Item(s) • Status: $status', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                                  Text(
+                                    'Order #$orderId',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${items.length} Item(s) • Status: $status',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                            Text('₹${amount.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF10B981))),
+                            Text(
+                              '₹${amount.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
                           ],
                         ),
                       );
@@ -1280,7 +2086,14 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
                   const SizedBox(height: 20),
 
                   // Customer System Details
-                  const Text('Customer Profile Info', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                  const Text(
+                    'Customer Profile Info',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -1312,13 +2125,34 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
     return Container(
       width: 100,
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(14), border: Border.all(color: color.withValues(alpha: 0.2))),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 8.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 8.5,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 2),
-          FittedBox(fit: BoxFit.scaleDown, child: Text(val, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color))),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              val,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1330,8 +2164,25 @@ class _CustomerDetailBottomSheet extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-          Expanded(child: Text(val, textAlign: TextAlign.right, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              val,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -1,8 +1,11 @@
 import 'skeleton_loader.dart';
+import 'r2_media_library_picker_modal.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../services/exercises_backend_service.dart';
+import '../services/exercises_backend_service.dart' hide ExerciseCategoryModel;
+import '../services/exercise_category_backend_service.dart';
+import '../services/category_backend_service.dart';
 import 'upload_progress_overlay.dart';
 
 class FitnessExercisesView extends StatefulWidget {
@@ -28,14 +31,15 @@ class _FitnessExercisesViewState extends State<FitnessExercisesView> {
   void initState() {
     super.initState();
     _backendService.addListener(_onExServiceUpdate);
-    if (_backendService.exercises.isEmpty) {
-      _backendService.fetchExercisesFromFirestore();
-    }
+    ExerciseCategoryBackendService().addListener(_onExServiceUpdate);
+    _backendService.fetchExercisesFromFirestore();
+    ExerciseCategoryBackendService().fetchCategories();
   }
 
   @override
   void dispose() {
     _backendService.removeListener(_onExServiceUpdate);
+    ExerciseCategoryBackendService().removeListener(_onExServiceUpdate);
     super.dispose();
   }
 
@@ -101,7 +105,28 @@ class _FitnessExercisesViewState extends State<FitnessExercisesView> {
         ? widget.slideAnimations[0]
         : const AlwaysStoppedAnimation(Offset.zero);
 
-    final categories = _backendService.categories;
+    final dbCategories = ExerciseCategoryBackendService().categories;
+    final List<ExerciseCategoryModel> categoriesList = [];
+    final Set<String> seenCatIds = {};
+
+    for (var c in dbCategories) {
+      if (!seenCatIds.contains(c.categoryId)) {
+        seenCatIds.add(c.categoryId);
+        categoriesList.add(c);
+      }
+    }
+    for (var c in _backendService.categories) {
+      if (!seenCatIds.contains(c.categoryId)) {
+        seenCatIds.add(c.categoryId);
+        categoriesList.add(ExerciseCategoryModel(
+          id: c.categoryId,
+          categoryId: c.categoryId,
+          name: c.name,
+          imageUrl: c.imageUrl,
+        ));
+      }
+    }
+
     final exercises = _backendService.exercises.where((e) {
       final matchesSearch = _searchQuery.isEmpty ||
           e.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
@@ -192,7 +217,7 @@ class _FitnessExercisesViewState extends State<FitnessExercisesView> {
                 children: [
                   // 'All Exercises' Card
                   _buildAllCategoriesCard(),
-                  ...categories.map((c) => _buildCategoryCard(c)),
+                  ...categoriesList.map((c) => _buildCategoryCard(c)),
                 ],
               ),
             ),
@@ -226,7 +251,7 @@ class _FitnessExercisesViewState extends State<FitnessExercisesView> {
                 Text(
                   _selectedCategoryFilter == 'All'
                       ? 'All Exercises (${exercises.length})'
-                      : '${categories.firstWhere((c) => c.categoryId == _selectedCategoryFilter, orElse: () => categories.first).name} (${exercises.length})',
+                      : '${categoriesList.firstWhere((c) => c.categoryId == _selectedCategoryFilter, orElse: () => categoriesList.isNotEmpty ? categoriesList.first : ExerciseCategoryModel(categoryId: '', name: 'Selected')).name} (${exercises.length})',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
                 ),
                 if (_selectedCategoryFilter != 'All')
@@ -332,14 +357,27 @@ class _FitnessExercisesViewState extends State<FitnessExercisesView> {
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            // Background Image from Cloudflare R2
-            Image.network(
-              cat.imageUrl,
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (c, e, s) => Container(color: const Color(0xFF1E293B)),
-            ),
+            // Background Image/Video from Cloudflare R2
+            Builder(builder: (context) {
+              final isVid = cat.imageUrl.toLowerCase().endsWith('.mp4') || cat.imageUrl.toLowerCase().endsWith('.mov') || cat.imageUrl.toLowerCase().endsWith('.webm');
+              if (isVid) {
+                return Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  color: const Color(0xFF0F172A),
+                  child: const Center(
+                    child: Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 32),
+                  ),
+                );
+              }
+              return Image.network(
+                CategoryBackendService.getDisplayableImageUrl(cat.imageUrl),
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => Container(color: const Color(0xFF1E293B)),
+              );
+            }),
             // Gradient Overlay
             Container(
               decoration: BoxDecoration(
@@ -439,13 +477,26 @@ class _FitnessExercisesViewState extends State<FitnessExercisesView> {
                       color: Color(0xFF0F172A),
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: Image.network(
-                      ex.mediaUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (c, e, s) => const Center(
-                        child: Icon(Icons.fitness_center_rounded, size: 32, color: Color(0xFF6366F1)),
-                      ),
-                    ),
+                    child: Builder(builder: (context) {
+                      final isVid = ex.mediaUrl.toLowerCase().endsWith('.mp4') || ex.mediaUrl.toLowerCase().endsWith('.mov') || ex.mediaUrl.toLowerCase().endsWith('.webm');
+                      if (isVid) {
+                        return Container(
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: const Color(0xFF0F172A),
+                          child: const Center(
+                            child: Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 32),
+                          ),
+                        );
+                      }
+                      return Image.network(
+                        CategoryBackendService.getDisplayableImageUrl(ex.mediaUrl),
+                        fit: BoxFit.cover,
+                        errorBuilder: (c, e, s) => const Center(
+                          child: Icon(Icons.fitness_center_rounded, size: 32, color: Color(0xFF6366F1)),
+                        ),
+                      );
+                    }),
                   ),
                   Positioned(
                     top: 6,
@@ -524,26 +575,27 @@ class _EditExerciseCategorySheet extends StatefulWidget {
 
 class _EditExerciseCategorySheetState extends State<_EditExerciseCategorySheet> {
   late TextEditingController _nameCtrl;
-  final ImagePicker _picker = ImagePicker();
-  Uint8List? _newImageBytes;
-  XFile? _newImageFile;
+  late TextEditingController _descCtrl;
+  String? _selectedR2Url;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.category.name);
+    _descCtrl = TextEditingController(text: widget.category.description);
+    _selectedR2Url = widget.category.imageUrl;
   }
 
-  void _pickNewImage() async {
-    final f = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 1000, maxHeight: 1000, imageQuality: 88);
-    if (f != null) {
-      final b = await f.readAsBytes();
-      setState(() {
-        _newImageFile = f;
-        _newImageBytes = b;
-      });
-    }
+  void _openR2MediaPicker() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+        });
+      },
+    );
   }
 
   void _handleSave() async {
@@ -553,22 +605,26 @@ class _EditExerciseCategorySheetState extends State<_EditExerciseCategorySheet> 
     setState(() => _isSaving = true);
     Navigator.pop(context);
 
-    String? updatedUrl;
-    if (_newImageBytes != null) {
-      final notifier = UploadProgressNotifier();
-      notifier.startUpload(_newImageFile?.name ?? 'category.jpg');
-      updatedUrl = await ExercisesBackendService().createCategory(
-        name: newName,
-        imageFileName: _newImageFile?.name ?? 'category.jpg',
-        imageBytes: _newImageBytes!,
-      ).then((c) => c?.imageUrl);
-      if (updatedUrl != null) notifier.completeUpload(updatedUrl);
-    }
+    final imageUrl = _selectedR2Url ?? widget.category.imageUrl;
+    final isVideo = imageUrl.toLowerCase().endsWith('.mp4') || imageUrl.toLowerCase().endsWith('.mov') || imageUrl.toLowerCase().endsWith('.webm');
+    final isGif = imageUrl.toLowerCase().endsWith('.gif');
+    final mediaType = isVideo ? 'video' : (isGif ? 'gif' : 'image');
 
+    final catModel = ExerciseCategoryModel(
+      id: widget.category.id,
+      categoryId: widget.category.categoryId,
+      name: newName,
+      description: _descCtrl.text.trim(),
+      imageUrl: imageUrl,
+      mediaType: mediaType,
+      sortOrder: widget.category.sortOrder,
+    );
+
+    await ExerciseCategoryBackendService().updateCategory(catModel);
     await ExercisesBackendService().updateCategory(
       categoryId: widget.category.categoryId,
       newName: newName,
-      newImageUrl: updatedUrl,
+      newImageUrl: imageUrl,
     );
 
     widget.onUpdated();
@@ -585,10 +641,11 @@ class _EditExerciseCategorySheetState extends State<_EditExerciseCategorySheet> 
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
               Navigator.pop(context);
-              ExercisesBackendService().deleteCategory(widget.category.categoryId);
+              await ExerciseCategoryBackendService().deleteCategory(widget.category.id.isNotEmpty ? widget.category.id : widget.category.categoryId);
+              await ExercisesBackendService().deleteCategory(widget.category.categoryId);
               widget.onUpdated();
             },
             child: const Text('Delete'),
@@ -600,6 +657,9 @@ class _EditExerciseCategorySheetState extends State<_EditExerciseCategorySheet> 
 
   @override
   Widget build(BuildContext context) {
+    final imageUrl = _selectedR2Url ?? widget.category.imageUrl;
+    final isVideo = imageUrl.toLowerCase().endsWith('.mp4') || imageUrl.toLowerCase().endsWith('.mov') || imageUrl.toLowerCase().endsWith('.webm');
+
     return Container(
       padding: EdgeInsets.only(top: 20, left: 20, right: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 28),
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
@@ -611,27 +671,76 @@ class _EditExerciseCategorySheetState extends State<_EditExerciseCategorySheet> 
           const SizedBox(height: 16),
           const Text('Edit Exercise Category', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 4),
-          Text('ID: ${widget.category.categoryId} • ${widget.category.exerciseCount} Linked Exercises', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          Text('ID: ${widget.category.categoryId} • Category Details', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
           const SizedBox(height: 16),
 
-          // Image Preview
-          GestureDetector(
-            onTap: _pickNewImage,
-            child: Container(
-              width: double.infinity,
-              height: 120,
-              decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35))),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: _newImageBytes != null
-                    ? Image.memory(_newImageBytes!, fit: BoxFit.cover)
-                    : Image.network(widget.category.imageUrl, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: const Color(0xFF0F172A))),
-              ),
+          // Media Preview & R2 Switch
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: (isVideo
+                      ? Container(
+                          width: 80,
+                          height: 65,
+                          color: const Color(0xFF0F172A),
+                          child: const Center(
+                            child: Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 28),
+                          ),
+                        )
+                      : Image.network(
+                          CategoryBackendService.getDisplayableImageUrl(imageUrl),
+                          width: 80,
+                          height: 65,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 80,
+                            height: 65,
+                            color: const Color(0xFF0F172A),
+                            child: const Icon(Icons.broken_image, color: Colors.white),
+                          ),
+                        )),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        imageUrl.split('/').last,
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF0F172A)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
+                        onPressed: _openR2MediaPicker,
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF0284C7)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.cloud_done_rounded, size: 15, color: Color(0xFF0284C7)),
+                        label: const Text('Change Media (R2)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 14),
 
           TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Category Title')),
+          const SizedBox(height: 10),
+          TextField(controller: _descCtrl, decoration: const InputDecoration(labelText: 'Category Description')),
           const SizedBox(height: 20),
 
           Row(
@@ -672,10 +781,25 @@ class _AddExerciseCategorySheet extends StatefulWidget {
 
 class _AddExerciseCategorySheetState extends State<_AddExerciseCategorySheet> {
   final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _descCtrl = TextEditingController();
+  String? _selectedR2Url;
   final ImagePicker _picker = ImagePicker();
   Uint8List? _imageBytes;
   XFile? _imageFile;
   bool _isProcessing = false;
+
+  void _openR2MediaPicker() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+          _imageBytes = null;
+          _imageFile = null;
+        });
+      },
+    );
+  }
 
   void _pickImage() async {
     final f = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 1000, maxHeight: 1000, imageQuality: 85);
@@ -684,29 +808,48 @@ class _AddExerciseCategorySheetState extends State<_AddExerciseCategorySheet> {
       setState(() {
         _imageFile = f;
         _imageBytes = b;
+        _selectedR2Url = null;
       });
     }
   }
 
   void _submit() async {
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty || _imageBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select category image and enter title')));
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter category title')));
+      return;
+    }
+    if (_imageBytes == null && _selectedR2Url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select category image or R2 media')));
       return;
     }
 
     setState(() => _isProcessing = true);
     Navigator.pop(context);
 
-    final res = await ExercisesBackendService().createCategory(
+    String finalUrl = _selectedR2Url ?? '';
+    if (_selectedR2Url == null && _imageBytes != null) {
+      final res = await ExercisesBackendService().createCategory(
+        name: name,
+        imageFileName: _imageFile?.name ?? 'ex_category.jpg',
+        imageBytes: _imageBytes!,
+      );
+      if (res != null) finalUrl = res.imageUrl;
+    }
+
+    final isVideo = finalUrl.toLowerCase().endsWith('.mp4') || finalUrl.toLowerCase().endsWith('.mov') || finalUrl.toLowerCase().endsWith('.webm');
+    final isGif = finalUrl.toLowerCase().endsWith('.gif');
+    final mediaType = isVideo ? 'video' : (isGif ? 'gif' : 'image');
+
+    await ExerciseCategoryBackendService().createCategory(
       name: name,
-      imageFileName: _imageFile?.name ?? 'ex_category.jpg',
-      imageBytes: _imageBytes!,
+      description: _descCtrl.text.trim(),
+      imageUrl: finalUrl,
+      mediaType: mediaType,
+      sortOrder: ExerciseCategoryBackendService().categories.length + 1,
     );
 
-    if (res != null) {
-      widget.onAdded();
-    }
+    widget.onAdded();
   }
 
   @override
@@ -725,27 +868,87 @@ class _AddExerciseCategorySheetState extends State<_AddExerciseCategorySheet> {
           const Text('Organize workout movement directory by muscle groups', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
           const SizedBox(height: 16),
 
-          GestureDetector(
-            onTap: _pickImage,
-            child: Container(
-              width: double.infinity,
-              height: 110,
-              decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35))),
-              child: _imageBytes != null
-                  ? ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(_imageBytes!, fit: BoxFit.cover))
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF6366F1), size: 26),
-                        SizedBox(height: 4),
-                        Text('Select Category Image', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                      ],
+          // Media Selection Container
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35)),
+            ),
+            child: Row(
+              children: [
+                if (_selectedR2Url != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      CategoryBackendService.getDisplayableImageUrl(_selectedR2Url!),
+                      width: 54,
+                      height: 54,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(width: 54, height: 54, color: const Color(0xFF0F172A), child: const Icon(Icons.play_arrow_rounded, color: Colors.white)),
                     ),
+                  )
+                else if (_imageBytes != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.memory(_imageBytes!, width: 54, height: 54, fit: BoxFit.cover),
+                  )
+                else
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF6366F1)),
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedR2Url != null ? _selectedR2Url!.split('/').last : (_imageFile != null ? _imageFile!.name : 'No image attached'),
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _openR2MediaPicker,
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF0284C7)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            icon: const Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF0284C7)),
+                            label: const Text('R2 Cloud', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                          ),
+                          const SizedBox(width: 6),
+                          OutlinedButton.icon(
+                            onPressed: _pickImage,
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF6366F1)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            icon: const Icon(Icons.upload_file_rounded, size: 14, color: Color(0xFF6366F1)),
+                            label: const Text('Device', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF6366F1))),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
 
           TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Category Name (e.g. Chest & Pecs, Glutes, Hamstrings)')),
+          const SizedBox(height: 8),
+          TextField(controller: _descCtrl, decoration: const InputDecoration(labelText: 'Category Description (Optional)')),
           const SizedBox(height: 18),
 
           SizedBox(
@@ -778,15 +981,18 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _muscleCtrl = TextEditingController(text: 'Upper Chest & Front Delts');
   final TextEditingController _equipmentCtrl = TextEditingController(text: 'Dumbbells & Incline Bench');
-  final TextEditingController _instructionsCtrl = TextEditingController(
-    text: 'Set bench to 30 degrees. Retract scapula, maintain controlled cadence, and lock out with full chest contraction.',
-  );
+  final List<TextEditingController> _stepCtrls = [
+    TextEditingController(text: 'Set bench to 30 degrees incline.'),
+    TextEditingController(text: 'Retract scapula and drive feet firmly into floor.'),
+    TextEditingController(text: 'Press dumbbells vertically with full chest squeeze at top.'),
+  ];
   final ImagePicker _picker = ImagePicker();
 
   String _selectedMediaType = 'gif'; // 'gif', 'video', 'image'
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   String _selectedDifficulty = 'Intermediate';
+  String? _selectedR2Url;
 
   Uint8List? _mediaBytes;
   XFile? _mediaFile;
@@ -795,11 +1001,58 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
   @override
   void initState() {
     super.initState();
-    final categories = ExercisesBackendService().categories;
+    final categories = ExerciseCategoryBackendService().categories;
     if (categories.isNotEmpty) {
       _selectedCategoryId = categories.first.categoryId;
       _selectedCategoryName = categories.first.name;
     }
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _muscleCtrl.dispose();
+    _equipmentCtrl.dispose();
+    for (var c in _stepCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addStep() {
+    setState(() {
+      _stepCtrls.add(TextEditingController());
+    });
+  }
+
+  void _removeStep(int index) {
+    if (_stepCtrls.length > 1) {
+      setState(() {
+        final ctrl = _stepCtrls.removeAt(index);
+        ctrl.dispose();
+      });
+    }
+  }
+
+  void _openR2MediaPicker() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+          _mediaBytes = null;
+          _mediaFile = null;
+          final lower = url.toLowerCase();
+          if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm')) {
+            _selectedMediaType = 'video';
+          } else if (lower.endsWith('.gif')) {
+            _selectedMediaType = 'gif';
+          } else {
+            _selectedMediaType = 'image';
+          }
+        });
+      },
+    );
   }
 
   void _pickMedia() async {
@@ -810,6 +1063,7 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
         setState(() {
           _mediaFile = f;
           _mediaBytes = b;
+          _selectedR2Url = null;
         });
       }
     } else {
@@ -819,6 +1073,7 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
         setState(() {
           _mediaFile = f;
           _mediaBytes = b;
+          _selectedR2Url = null;
         });
       }
     }
@@ -830,38 +1085,58 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter exercise movement title'), backgroundColor: Color(0xFFEF4444)));
       return;
     }
-    if (_mediaBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select ${_selectedMediaType.toUpperCase()} file'), backgroundColor: const Color(0xFFEF4444)));
+    if (_mediaBytes == null && _selectedR2Url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select or upload ${_selectedMediaType.toUpperCase()} media'), backgroundColor: const Color(0xFFEF4444)));
       return;
     }
 
-    final categories = ExercisesBackendService().categories;
+    final categories = ExerciseCategoryBackendService().categories;
     final catId = _selectedCategoryId ?? (categories.isNotEmpty ? categories.first.categoryId : 'excat_chest');
     final catName = _selectedCategoryName ?? (categories.isNotEmpty ? categories.first.name : 'Chest & Pecs');
 
     setState(() => _isProcessing = true);
 
-    // Ensure filename extension matches media type
-    String extension = 'jpg';
-    if (_selectedMediaType == 'gif') extension = 'gif';
-    if (_selectedMediaType == 'video') extension = 'mp4';
+    final stepTexts = _stepCtrls
+        .map((c) => c.text.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+    final formattedInstructions = stepTexts.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n');
 
-    final rawName = _mediaFile?.name ?? 'exercise';
-    final cleanBase = rawName.split('.').first;
-    final finalFileName = '${cleanBase}_${DateTime.now().millisecondsSinceEpoch}.$extension';
+    ExerciseModel? res;
+    if (_selectedR2Url != null) {
+      res = await ExercisesBackendService().createExerciseWithUrl(
+        title: title,
+        categoryId: catId,
+        categoryName: catName,
+        mediaType: _selectedMediaType,
+        muscleGroup: _muscleCtrl.text.trim().isNotEmpty ? _muscleCtrl.text.trim() : 'Full Body',
+        difficulty: _selectedDifficulty,
+        equipment: _equipmentCtrl.text.trim().isNotEmpty ? _equipmentCtrl.text.trim() : 'Bodyweight',
+        instructions: formattedInstructions,
+        mediaUrl: _selectedR2Url!,
+      );
+    } else {
+      String extension = 'jpg';
+      if (_selectedMediaType == 'gif') extension = 'gif';
+      if (_selectedMediaType == 'video') extension = 'mp4';
 
-    final res = await ExercisesBackendService().createExercise(
-      title: title,
-      categoryId: catId,
-      categoryName: catName,
-      mediaType: _selectedMediaType,
-      muscleGroup: _muscleCtrl.text.trim().isNotEmpty ? _muscleCtrl.text.trim() : 'Full Body',
-      difficulty: _selectedDifficulty,
-      equipment: _equipmentCtrl.text.trim().isNotEmpty ? _equipmentCtrl.text.trim() : 'Bodyweight',
-      instructions: _instructionsCtrl.text.trim(),
-      mediaFileName: finalFileName,
-      mediaBytes: _mediaBytes!,
-    );
+      final rawName = _mediaFile?.name ?? 'exercise';
+      final cleanBase = rawName.split('.').first;
+      final finalFileName = '${cleanBase}_${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+      res = await ExercisesBackendService().createExercise(
+        title: title,
+        categoryId: catId,
+        categoryName: catName,
+        mediaType: _selectedMediaType,
+        muscleGroup: _muscleCtrl.text.trim().isNotEmpty ? _muscleCtrl.text.trim() : 'Full Body',
+        difficulty: _selectedDifficulty,
+        equipment: _equipmentCtrl.text.trim().isNotEmpty ? _equipmentCtrl.text.trim() : 'Bodyweight',
+        instructions: formattedInstructions,
+        mediaFileName: finalFileName,
+        mediaBytes: _mediaBytes!,
+      );
+    }
 
     setState(() => _isProcessing = false);
 
@@ -870,7 +1145,7 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
       widget.onAdded();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Exercise "$title" saved to Firestore & Cloudflare R2!'),
+          content: Text('Exercise "$title" saved to database & R2!'),
           backgroundColor: const Color(0xFF10B981),
           behavior: SnackBarBehavior.floating,
         ),
@@ -878,7 +1153,7 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Failed to save exercise. Please check network/R2 connection.'),
+          content: Text('Failed to save exercise. Please check network connection.'),
           backgroundColor: Color(0xFFEF4444),
           behavior: SnackBarBehavior.floating,
         ),
@@ -949,42 +1224,71 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Media Box
-            GestureDetector(
-              onTap: _pickMedia,
-              child: Container(
-                width: double.infinity,
-                height: 130,
-                decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35))),
-                child: _mediaBytes != null
-                    ? Stack(
-                        children: [
-                          ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(_mediaBytes!, width: double.infinity, height: double.infinity, fit: BoxFit.cover)),
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.7), borderRadius: BorderRadius.circular(8)),
-                              child: Text('${_selectedMediaType.toUpperCase()} Selected • Tap to Change', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+            // Media Box with R2 option
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35))),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      if (_selectedR2Url != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(CategoryBackendService.getDisplayableImageUrl(_selectedR2Url!), width: 60, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(width: 60, height: 60, color: const Color(0xFF0F172A), child: const Icon(Icons.play_arrow_rounded, color: Colors.white))),
+                        )
+                      else if (_mediaBytes != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.memory(_mediaBytes!, width: 60, height: 60, fit: BoxFit.cover),
+                        )
+                      else
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(10)),
+                          child: Icon(_selectedMediaType == 'video' ? Icons.videocam_rounded : Icons.animation_rounded, color: const Color(0xFF6366F1)),
+                        ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _selectedR2Url != null ? _selectedR2Url!.split('/').last : (_mediaFile != null ? _mediaFile!.name : 'No ${_selectedMediaType.toUpperCase()} attached'),
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(_selectedMediaType == 'video' ? Icons.videocam_rounded : Icons.animation_rounded, size: 30, color: const Color(0xFF6366F1)),
-                          const SizedBox(height: 6),
-                          Text('Select ${_selectedMediaType.toUpperCase()} File', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                          const Text('Cloudflare R2 Bucket Upload', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                        ],
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: _openR2MediaPicker,
+                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF0284C7)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                                  icon: const Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF0284C7)),
+                                  label: const Text('R2 Cloud', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                                ),
+                                const SizedBox(width: 6),
+                                OutlinedButton.icon(
+                                  onPressed: _pickMedia,
+                                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF6366F1)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                                  icon: const Icon(Icons.upload_file_rounded, size: 14, color: Color(0xFF6366F1)),
+                                  label: const Text('Device', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF6366F1))),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 14),
 
-            TextField(controller: _titleCtrl, decoration: const InputDecoration(labelText: 'Exercise Movement Title (e.g. Incline DB Press)', filled: true, fillColor: const Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
+            TextField(controller: _titleCtrl, decoration: const InputDecoration(labelText: 'Exercise Movement Title (e.g. Incline DB Press)', filled: true, fillColor: Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             const SizedBox(height: 12),
 
             const Text('Exercise Category', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
@@ -998,10 +1302,12 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
                   value: _selectedCategoryId,
                   items: categories.map((c) => DropdownMenuItem(value: c.categoryId, child: Text(c.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)))).toList(),
                   onChanged: (val) {
-                    setState(() {
-                      _selectedCategoryId = val;
-                      _selectedCategoryName = categories.firstWhere((c) => c.categoryId == val).name;
-                    });
+                    if (val != null) {
+                      setState(() {
+                        _selectedCategoryId = val;
+                        _selectedCategoryName = categories.firstWhere((c) => c.categoryId == val).name;
+                      });
+                    }
                   },
                 ),
               ),
@@ -1010,9 +1316,9 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
 
             Row(
               children: [
-                Expanded(child: TextField(controller: _muscleCtrl, decoration: const InputDecoration(labelText: 'Target Muscles', filled: true, fillColor: const Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
+                Expanded(child: TextField(controller: _muscleCtrl, decoration: const InputDecoration(labelText: 'Target Muscles', filled: true, fillColor: Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
                 const SizedBox(width: 10),
-                Expanded(child: TextField(controller: _equipmentCtrl, decoration: const InputDecoration(labelText: 'Equipment', filled: true, fillColor: const Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
+                Expanded(child: TextField(controller: _equipmentCtrl, decoration: const InputDecoration(labelText: 'Equipment', filled: true, fillColor: Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
               ],
             ),
             const SizedBox(height: 12),
@@ -1032,9 +1338,61 @@ class _AddExerciseBottomSheetState extends State<_AddExerciseBottomSheet> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
-            TextField(controller: _instructionsCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Coaching Form Cues & Steps', filled: true, fillColor: const Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
+            // Dynamic "How To Do" Steps List
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'How To Do (Step-by-Step Instructions)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                TextButton.icon(
+                  onPressed: _addStep,
+                  icon: const Icon(Icons.add_circle_outline_rounded, size: 16, color: Color(0xFF10B981)),
+                  label: const Text('Add Step', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _stepCtrls.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                return Row(
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
+                      child: Text('${index + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF475569))),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _stepCtrls[index],
+                        decoration: InputDecoration(
+                          hintText: 'Step ${index + 1} instruction cue...',
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    if (_stepCtrls.length > 1)
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline_rounded, color: Color(0xFFEF4444), size: 20),
+                        onPressed: () => _removeStep(index),
+                      ),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 20),
 
             SizedBox(
@@ -1069,26 +1427,112 @@ class _ExerciseDetailsSliderSheetState extends State<_ExerciseDetailsSliderSheet
   late TextEditingController _titleCtrl;
   late TextEditingController _muscleCtrl;
   late TextEditingController _equipmentCtrl;
-  late TextEditingController _instructionsCtrl;
+  final List<TextEditingController> _stepCtrls = [];
   late String _status;
+  late String _difficulty;
+  String? _selectedCategoryId;
+  String? _selectedCategoryName;
+  String? _selectedR2Url;
 
   @override
   void initState() {
     super.initState();
-    _titleCtrl = TextEditingController(text: widget.exercise.title);
-    _muscleCtrl = TextEditingController(text: widget.exercise.muscleGroup);
-    _equipmentCtrl = TextEditingController(text: widget.exercise.equipment);
-    _instructionsCtrl = TextEditingController(text: widget.exercise.instructions);
-    _status = widget.exercise.status;
+    final ex = widget.exercise;
+    _titleCtrl = TextEditingController(text: ex.title);
+    _muscleCtrl = TextEditingController(text: ex.muscleGroup);
+    _equipmentCtrl = TextEditingController(text: ex.equipment);
+    _status = ex.status;
+    _difficulty = ex.difficulty.isNotEmpty ? ex.difficulty : 'Intermediate';
+    _selectedCategoryId = ex.categoryId;
+    _selectedCategoryName = ex.categoryName;
+    _selectedR2Url = ex.mediaUrl;
+
+    // Parse instructions into individual step lines
+    final rawLines = ex.instructions.split('\n').where((s) => s.trim().isNotEmpty).toList();
+    if (rawLines.isEmpty) {
+      _stepCtrls.add(TextEditingController(text: ex.instructions));
+    } else {
+      for (var line in rawLines) {
+        _stepCtrls.add(TextEditingController(text: line.replaceFirst(RegExp(r'^\d+[\.\)]\s*'), '')));
+      }
+    }
+
+    final categories = ExerciseCategoryBackendService().categories;
+    if (categories.isNotEmpty) {
+      if (_selectedCategoryId == null || !categories.any((c) => c.categoryId == _selectedCategoryId)) {
+        _selectedCategoryId = categories.first.categoryId;
+        _selectedCategoryName = categories.first.name;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _muscleCtrl.dispose();
+    _equipmentCtrl.dispose();
+    for (var c in _stepCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addStep() {
+    setState(() {
+      _stepCtrls.add(TextEditingController());
+    });
+  }
+
+  void _removeStep(int index) {
+    if (_stepCtrls.length > 1) {
+      setState(() {
+        final ctrl = _stepCtrls.removeAt(index);
+        ctrl.dispose();
+      });
+    }
+  }
+
+  void _openR2MediaPicker() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+        });
+      },
+    );
   }
 
   void _handleSave() async {
     Navigator.pop(context);
-    widget.exercise.title = _titleCtrl.text.trim();
-    widget.exercise.muscleGroup = _muscleCtrl.text.trim();
-    widget.exercise.equipment = _equipmentCtrl.text.trim();
-    widget.exercise.instructions = _instructionsCtrl.text.trim();
+
+    final title = _titleCtrl.text.trim();
+    final muscle = _muscleCtrl.text.trim();
+    final equipment = _equipmentCtrl.text.trim();
+    final mediaUrl = _selectedR2Url ?? widget.exercise.mediaUrl;
+
+    final stepTexts = _stepCtrls
+        .map((c) => c.text.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+    final formattedInstructions = stepTexts.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n');
+
+    final isVideo = mediaUrl.toLowerCase().endsWith('.mp4') || mediaUrl.toLowerCase().endsWith('.mov') || mediaUrl.toLowerCase().endsWith('.webm');
+    final isGif = mediaUrl.toLowerCase().endsWith('.gif');
+    final mediaType = isVideo ? 'video' : (isGif ? 'gif' : 'image');
+
+    widget.exercise.title = title;
+    widget.exercise.muscleGroup = muscle;
+    widget.exercise.equipment = equipment;
+    widget.exercise.instructions = formattedInstructions;
     widget.exercise.status = _status;
+    widget.exercise.difficulty = _difficulty;
+    widget.exercise.mediaUrl = mediaUrl;
+    widget.exercise.mediaType = mediaType;
+    if (_selectedCategoryId != null) {
+      widget.exercise.categoryId = _selectedCategoryId!;
+      widget.exercise.categoryName = _selectedCategoryName ?? widget.exercise.categoryName;
+    }
     widget.exercise.updatedAt = DateTime.now();
 
     await ExercisesBackendService().updateExercise(widget.exercise);
@@ -1103,8 +1547,12 @@ class _ExerciseDetailsSliderSheetState extends State<_ExerciseDetailsSliderSheet
 
   @override
   Widget build(BuildContext context) {
+    final categories = ExerciseCategoryBackendService().categories;
+    final mediaUrl = _selectedR2Url ?? widget.exercise.mediaUrl;
+    final isVideo = mediaUrl.toLowerCase().endsWith('.mp4') || mediaUrl.toLowerCase().endsWith('.mov') || mediaUrl.toLowerCase().endsWith('.webm');
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.88,
+      height: MediaQuery.of(context).size.height * 0.90,
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       child: Column(
         children: [
@@ -1119,7 +1567,7 @@ class _ExerciseDetailsSliderSheetState extends State<_ExerciseDetailsSliderSheet
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Exercise Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                    const Text('Edit Exercise Movement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                     Text('${widget.exercise.categoryName} • Media: ${widget.exercise.mediaType.toUpperCase()}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                   ],
                 ),
@@ -1135,22 +1583,182 @@ class _ExerciseDetailsSliderSheetState extends State<_ExerciseDetailsSliderSheet
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(widget.exercise.mediaUrl, width: double.infinity, height: 160, fit: BoxFit.cover),
+                  // Media Header Preview & R2 Switch
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: (isVideo
+                              ? Container(
+                                  width: 80,
+                                  height: 65,
+                                  color: const Color(0xFF0F172A),
+                                  child: const Center(
+                                    child: Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 28),
+                                  ),
+                                )
+                              : Image.network(
+                                  CategoryBackendService.getDisplayableImageUrl(mediaUrl),
+                                  width: 80,
+                                  height: 65,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 80,
+                                    height: 65,
+                                    color: const Color(0xFF0F172A),
+                                    child: const Icon(Icons.broken_image, color: Colors.white),
+                                  ),
+                                )),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                mediaUrl.split('/').last,
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF0F172A)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 6),
+                              OutlinedButton.icon(
+                                onPressed: _openR2MediaPicker,
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Color(0xFF0284C7)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                ),
+                                icon: const Icon(Icons.cloud_done_rounded, size: 15, color: Color(0xFF0284C7)),
+                                label: const Text('Change Media (R2)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
 
-                  TextField(controller: _titleCtrl, decoration: const InputDecoration(labelText: 'Exercise Title')),
-                  const SizedBox(height: 10),
-                  TextField(controller: _muscleCtrl, decoration: const InputDecoration(labelText: 'Target Muscles')),
-                  const SizedBox(height: 10),
-                  TextField(controller: _equipmentCtrl, decoration: const InputDecoration(labelText: 'Equipment')),
-                  const SizedBox(height: 10),
-                  TextField(controller: _instructionsCtrl, maxLines: 3, decoration: const InputDecoration(labelText: 'Coaching Form Cues')),
-                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _titleCtrl,
+                    decoration: const InputDecoration(labelText: 'Exercise Movement Title', filled: true, fillColor: Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
+                  ),
+                  const SizedBox(height: 12),
+
+                  const Text('Exercise Category', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE2E8F0))),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _selectedCategoryId,
+                        items: categories.map((c) => DropdownMenuItem(value: c.categoryId, child: Text(c.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)))).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedCategoryId = val;
+                              _selectedCategoryName = categories.firstWhere((c) => c.categoryId == val).name;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(child: TextField(controller: _muscleCtrl, decoration: const InputDecoration(labelText: 'Target Muscles', filled: true, fillColor: Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
+                      const SizedBox(width: 10),
+                      Expanded(child: TextField(controller: _equipmentCtrl, decoration: const InputDecoration(labelText: 'Equipment', filled: true, fillColor: Color(0xFFF8FAFC), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  const Text('Difficulty Level', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: ['Beginner', 'Intermediate', 'Advanced'].map((diff) {
+                      final isSel = _difficulty == diff;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(diff, style: TextStyle(fontSize: 11, fontWeight: isSel ? FontWeight.w800 : FontWeight.w600)),
+                          selected: isSel,
+                          onSelected: (v) => setState(() => _difficulty = diff),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Dynamic "How To Do" Steps List
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'How To Do (Step-by-Step Instructions)',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      ),
+                      TextButton.icon(
+                        onPressed: _addStep,
+                        icon: const Icon(Icons.add_circle_outline_rounded, size: 16, color: Color(0xFF10B981)),
+                        label: const Text('Add Step', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _stepCtrls.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      return Row(
+                        children: [
+                          Container(
+                            width: 24,
+                            height: 24,
+                            alignment: Alignment.center,
+                            decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
+                            child: Text('${index + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF475569))),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _stepCtrls[index],
+                              decoration: InputDecoration(
+                                hintText: 'Step ${index + 1} instruction cue...',
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                filled: true,
+                                fillColor: const Color(0xFFF8FAFC),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                          if (_stepCtrls.length > 1)
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline_rounded, color: Color(0xFFEF4444), size: 20),
+                              onPressed: () => _removeStep(index),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
 
                   SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
                     title: Text(_status == 'Active' ? 'Status: Active (Visible to Athletes)' : 'Status: Deactivated', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                     value: _status == 'Active',
                     activeColor: const Color(0xFF10B981),
@@ -1177,6 +1785,7 @@ class _ExerciseDetailsSliderSheetState extends State<_ExerciseDetailsSliderSheet
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),

@@ -1,4 +1,5 @@
 import 'skeleton_loader.dart';
+import 'r2_media_library_picker_modal.dart';
 
 import 'dart:typed_data';
 
@@ -6,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/fitness_cms_backend_service.dart';
+import '../services/category_backend_service.dart';
+import '../services/workout_banners_backend_service.dart';
+import 'upload_progress_overlay.dart';
 
 class FitnessCmsView extends StatefulWidget {
   final String selectedDateRange;
@@ -30,14 +34,15 @@ class _FitnessCmsViewState extends State<FitnessCmsView> {
   void initState() {
     super.initState();
     _backendService.addListener(_onCmsServiceUpdate);
-    if (_backendService.banners.isEmpty) {
-      _backendService.fetchCmsItemsFromFirestore();
-    }
+    WorkoutBannersBackendService().addListener(_onCmsServiceUpdate);
+    _backendService.fetchCmsItemsFromFirestore();
+    WorkoutBannersBackendService().fetchWorkoutBanners();
   }
 
   @override
   void dispose() {
     _backendService.removeListener(_onCmsServiceUpdate);
+    WorkoutBannersBackendService().removeListener(_onCmsServiceUpdate);
     super.dispose();
   }
 
@@ -81,7 +86,26 @@ class _FitnessCmsViewState extends State<FitnessCmsView> {
         ? widget.slideAnimations[0]
         : const AlwaysStoppedAnimation(Offset.zero);
 
-    final banners = _backendService.banners;
+    final dbBanners = WorkoutBannersBackendService().banners.map((wb) => FitnessCmsItemModel(
+      itemId: wb.bannerId,
+      id: wb.id,
+      type: 'banner',
+      title: wb.title,
+      subtitle: wb.subtitle,
+      imageUrl: wb.imageUrl,
+      targetType: wb.targetType,
+      targetId: wb.targetId,
+      targetName: wb.targetName,
+      badge: wb.badge,
+      buttonText: wb.buttonText,
+      sortOrder: wb.sortOrder,
+      status: wb.isActive ? 'Active' : 'Inactive',
+      isActive: wb.isActive,
+      createdAt: wb.createdAt,
+      updatedAt: wb.updatedAt,
+    )).toList();
+
+    final banners = dbBanners;
     final spotlights = _backendService.spotlights;
 
     return FadeTransition(
@@ -559,25 +583,37 @@ class _FitnessCmsViewState extends State<FitnessCmsView> {
         ),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                item.imageUrl,
-                width: 68,
-                height: 68,
-                fit: BoxFit.cover,
-                errorBuilder: (c, e, s) => Container(
-                  width: 68,
-                  height: 68,
-                  color: const Color(0xFF0F172A),
-                  child: const Icon(
-                    Icons.fitness_center_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
+            Builder(builder: (context) {
+              final isVid = item.imageUrl.toLowerCase().endsWith('.mp4') || item.imageUrl.toLowerCase().endsWith('.mov') || item.imageUrl.toLowerCase().endsWith('.webm');
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: isVid
+                    ? Container(
+                        width: 68,
+                        height: 68,
+                        color: const Color(0xFF0F172A),
+                        child: const Center(
+                          child: Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 28),
+                        ),
+                      )
+                    : Image.network(
+                        CategoryBackendService.getDisplayableImageUrl(item.imageUrl),
+                        width: 68,
+                        height: 68,
+                        fit: BoxFit.cover,
+                        errorBuilder: (c, e, s) => Container(
+                          width: 68,
+                          height: 68,
+                          color: const Color(0xFF0F172A),
+                          child: const Icon(
+                            Icons.fitness_center_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+              );
+            }),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -766,11 +802,33 @@ class _AddFitnessCmsBottomSheetState extends State<_AddFitnessCmsBottomSheet> {
     }
   }
 
+  String? _selectedR2Url;
+
+  void _openR2MediaPicker() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+          _imageBytes = null;
+          _imageFile = null;
+        });
+      },
+    );
+  }
+
   void _submit() async {
     final title = _titleCtrl.text.trim();
-    if (title.isEmpty || _imageBytes == null) {
+    if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select image and enter title')),
+        const SnackBar(content: Text('Please enter banner title')),
+      );
+      return;
+    }
+
+    if (_imageBytes == null && _selectedR2Url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select or upload media for this banner')),
       );
       return;
     }
@@ -778,23 +836,59 @@ class _AddFitnessCmsBottomSheetState extends State<_AddFitnessCmsBottomSheet> {
     setState(() => _isProcessing = true);
     Navigator.pop(context);
 
-    final res = await FitnessCmsBackendService().createCmsItem(
-      type: _type,
-      title: title,
-      subtitle: _subtitleCtrl.text.trim(),
-      targetType: _targetType,
-      targetId: _selectedTargetId,
-      targetName: _selectedTargetName,
-      badge: _badgeCtrl.text.trim(),
-      buttonText: _buttonTextCtrl.text.trim(),
-      sortOrder: FitnessCmsBackendService().items.length + 1,
-      imageFileName: _imageFile?.name ?? 'fitness_cms.jpg',
-      imageBytes: _imageBytes!,
-    );
-
-    if (res != null) {
-      widget.onAdded();
+    String finalImageUrl = _selectedR2Url ?? '';
+    if (finalImageUrl.isEmpty && _imageBytes != null) {
+      final notifier = UploadProgressNotifier();
+      notifier.startUpload(_imageFile?.name ?? 'fitness_cms.jpg');
+      final uploadedUrl = await CategoryBackendService().uploadRawImageToR2(
+        fileName: _imageFile?.name ?? 'fitness_cms.jpg',
+        imageBytes: _imageBytes!,
+        onProgress: (p, s) => notifier.updateProgress(p, customStatus: s),
+      );
+      if (uploadedUrl != null) {
+        finalImageUrl = uploadedUrl;
+        notifier.completeUpload(uploadedUrl);
+      } else {
+        notifier.failUpload('Failed to upload media');
+        return;
+      }
     }
+
+    final isVideo = finalImageUrl.toLowerCase().endsWith('.mp4') ||
+        finalImageUrl.toLowerCase().endsWith('.mov') ||
+        finalImageUrl.toLowerCase().endsWith('.webm');
+    final isGif = finalImageUrl.toLowerCase().endsWith('.gif');
+    final mType = isVideo ? 'video' : (isGif ? 'gif' : 'image');
+
+    if (_type == 'banner') {
+      await WorkoutBannersBackendService().createWorkoutBanner(
+        title: title,
+        subtitle: _subtitleCtrl.text.trim(),
+        imageUrl: finalImageUrl,
+        mediaType: mType,
+        targetType: _targetType,
+        targetId: _selectedTargetId,
+        targetName: _selectedTargetName,
+        badge: _badgeCtrl.text.trim(),
+        buttonText: _buttonTextCtrl.text.trim(),
+        showTitle: true,
+        sortOrder: WorkoutBannersBackendService().banners.length + 1,
+      );
+    } else {
+      await FitnessCmsBackendService().createCmsItemWithUrl(
+        type: _type,
+        title: title,
+        subtitle: _subtitleCtrl.text.trim(),
+        targetType: _targetType,
+        targetId: _selectedTargetId,
+        targetName: _selectedTargetName,
+        badge: _badgeCtrl.text.trim(),
+        buttonText: _buttonTextCtrl.text.trim(),
+        sortOrder: FitnessCmsBackendService().spotlights.length + 1,
+        imageUrl: finalImageUrl,
+      );
+    }
+    widget.onAdded();
   }
 
   @override
@@ -1098,7 +1192,7 @@ class _AddFitnessCmsBottomSheetState extends State<_AddFitnessCmsBottomSheet> {
                     decoration: const InputDecoration(
                       labelText: 'Button Label (e.g. Start)',
                       filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
+                      fillColor: Color(0xFFF8FAFC),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.all(Radius.circular(12)),
                       ),
@@ -1106,6 +1200,69 @@ class _AddFitnessCmsBottomSheetState extends State<_AddFitnessCmsBottomSheet> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Banner Media File (Video / GIF / Image)',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  if (_selectedR2Url != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        CategoryBackendService.getDisplayableImageUrl(_selectedR2Url!),
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, _) => Container(width: 48, height: 48, color: const Color(0xFF0F172A), child: const Icon(Icons.play_arrow_rounded, color: Colors.white)),
+                      ),
+                    )
+                  else if (_imageBytes != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(_imageBytes!, width: 48, height: 48, fit: BoxFit.cover),
+                    )
+                  else
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.perm_media_rounded, color: Colors.grey),
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _selectedR2Url != null
+                          ? _selectedR2Url!.split('/').last
+                          : (_imageFile != null ? _imageFile!.name : 'No media attached yet'),
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openR2MediaPicker,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF0284C7)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    ),
+                    icon: const Icon(Icons.cloud_done_rounded, size: 15, color: Color(0xFF0284C7)),
+                    label: const Text('R2 Media', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -1158,6 +1315,7 @@ class _FitnessCmsEditSliderSheetState
   late TextEditingController _badgeCtrl;
   late TextEditingController _buttonCtrl;
   late String _status;
+  String? _selectedR2Url;
 
   @override
   void initState() {
@@ -1167,127 +1325,246 @@ class _FitnessCmsEditSliderSheetState
     _badgeCtrl = TextEditingController(text: widget.item.badge);
     _buttonCtrl = TextEditingController(text: widget.item.buttonText);
     _status = widget.item.status;
+    _selectedR2Url = widget.item.imageUrl;
+  }
+
+  void _openR2MediaPicker() {
+    R2MediaLibraryPickerModal.show(
+      context,
+      onImageSelected: (url) {
+        setState(() {
+          _selectedR2Url = url;
+        });
+      },
+    );
   }
 
   void _handleSave() async {
     Navigator.pop(context);
-    await FitnessCmsBackendService().updateCmsItem(
-      itemId: widget.item.itemId,
-      title: _titleCtrl.text.trim(),
-      subtitle: _subtitleCtrl.text.trim(),
-      targetType: widget.item.targetType,
-      targetId: widget.item.targetId,
-      targetName: widget.item.targetName,
-      badge: _badgeCtrl.text.trim(),
-      buttonText: _buttonCtrl.text.trim(),
-      status: _status,
-    );
+
+    final title = _titleCtrl.text.trim();
+    final subtitle = _subtitleCtrl.text.trim();
+    final badge = _badgeCtrl.text.trim();
+    final buttonText = _buttonCtrl.text.trim();
+    final imageUrl = _selectedR2Url ?? widget.item.imageUrl;
+
+    final isVideo = imageUrl.toLowerCase().endsWith('.mp4') || imageUrl.toLowerCase().endsWith('.mov') || imageUrl.toLowerCase().endsWith('.webm');
+    final isGif = imageUrl.toLowerCase().endsWith('.gif');
+    final mediaType = isVideo ? 'video' : (isGif ? 'gif' : 'image');
+
+    if (widget.item.type == 'banner') {
+      final bId = widget.item.itemId.isNotEmpty ? widget.item.itemId : widget.item.id;
+      final bannerModel = WorkoutBannerModel(
+        id: widget.item.id,
+        bannerId: bId,
+        title: title,
+        subtitle: subtitle,
+        imageUrl: imageUrl,
+        mediaType: mediaType,
+        targetType: widget.item.targetType,
+        targetId: widget.item.targetId,
+        targetName: widget.item.targetName,
+        badge: badge,
+        buttonText: buttonText,
+        showTitle: true,
+        sortOrder: widget.item.sortOrder,
+        isActive: (_status == 'Active'),
+      );
+      await WorkoutBannersBackendService().updateWorkoutBanner(bannerModel);
+    } else {
+      await FitnessCmsBackendService().updateCmsItem(
+        itemId: widget.item.itemId,
+        title: title,
+        subtitle: subtitle,
+        targetType: widget.item.targetType,
+        targetId: widget.item.targetId,
+        targetName: widget.item.targetName,
+        badge: badge,
+        buttonText: buttonText,
+        newImageUrl: imageUrl,
+        status: _status,
+      );
+    }
     widget.onUpdated();
   }
 
-  void _handleDelete() {
+  void _handleDelete() async {
     Navigator.pop(context);
-    FitnessCmsBackendService().deleteCmsItem(widget.item.itemId);
+    if (widget.item.type == 'banner') {
+      final bId = widget.item.itemId.isNotEmpty ? widget.item.itemId : widget.item.id;
+      await WorkoutBannersBackendService().deleteWorkoutBanner(bId);
+    } else {
+      await FitnessCmsBackendService().deleteCmsItem(widget.item.itemId);
+    }
     widget.onUpdated();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 44,
-            height: 4.5,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Edit ${widget.item.type.toUpperCase()}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 16, color: Color(0xFFF1F5F9)),
+    final mediaUrl = _selectedR2Url ?? widget.item.imageUrl;
+    final isVideo = mediaUrl.toLowerCase().endsWith('.mp4') || mediaUrl.toLowerCase().endsWith('.mov') || mediaUrl.toLowerCase().endsWith('.webm');
 
-          Expanded(
-            child: SingleChildScrollView(
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 44,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      widget.item.imageUrl,
-                      width: double.infinity,
-                      height: 140,
-                      fit: BoxFit.cover,
+                  Text(
+                    'Edit ${widget.item.type.toUpperCase()}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 16, color: Color(0xFFF1F5F9)),
 
-                  TextField(
-                    controller: _titleCtrl,
-                    decoration: const InputDecoration(labelText: 'Title'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _subtitleCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Subtitle / Tagline',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _badgeCtrl,
-                    decoration: const InputDecoration(labelText: 'Badge Tag'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _buttonCtrl,
-                    decoration: const InputDecoration(labelText: 'Button Text'),
-                  ),
-                  const SizedBox(height: 14),
-
-                  SwitchListTile.adaptive(
-                    title: Text(
-                      _status == 'Active'
-                          ? 'Status: Active (Visible on Home)'
-                          : 'Status: Deactivated',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: (isVideo
+                                ? Container(
+                                    width: 80,
+                                    height: 65,
+                                    color: const Color(0xFF0F172A),
+                                    child: const Center(
+                                      child: Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 28),
+                                    ),
+                                  )
+                                : Image.network(
+                                    CategoryBackendService.getDisplayableImageUrl(mediaUrl),
+                                    width: 80,
+                                    height: 65,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      width: 80,
+                                      height: 65,
+                                      color: const Color(0xFF0F172A),
+                                      child: const Icon(Icons.broken_image, color: Colors.white),
+                                    ),
+                                  )),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  mediaUrl.split('/').last,
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Color(0xFF0F172A)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 6),
+                                OutlinedButton.icon(
+                                  onPressed: _openR2MediaPicker,
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: Color(0xFF0284C7)),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  ),
+                                  icon: const Icon(Icons.cloud_done_rounded, size: 15, color: Color(0xFF0284C7)),
+                                  label: const Text('Change Media (R2)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0284C7))),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    value: _status == 'Active',
-                    activeColor: const Color(0xFF10B981),
-                    onChanged: (v) =>
-                        setState(() => _status = v ? 'Active' : 'Deactivated'),
-                  ),
-                  const SizedBox(height: 20),
+                    const SizedBox(height: 16),
+
+                    TextField(
+                      controller: _titleCtrl,
+                      decoration: const InputDecoration(labelText: 'Title'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _subtitleCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Subtitle / Tagline',
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _badgeCtrl,
+                      decoration: const InputDecoration(labelText: 'Badge Tag'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _buttonCtrl,
+                      decoration: const InputDecoration(labelText: 'Button Text'),
+                    ),
+                    const SizedBox(height: 14),
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _status == 'Active'
+                                ? 'Status: Active (Visible on Home)'
+                                : 'Status: Deactivated',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          Switch.adaptive(
+                            value: _status == 'Active',
+                            activeTrackColor: const Color(0xFF10B981),
+                            onChanged: (v) =>
+                                setState(() => _status = v ? 'Active' : 'Deactivated'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
 
                   Row(
                     children: [
@@ -1328,6 +1605,7 @@ class _FitnessCmsEditSliderSheetState
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

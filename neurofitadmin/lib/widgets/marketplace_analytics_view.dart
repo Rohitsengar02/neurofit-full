@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/category_backend_service.dart';
+import '../constants/api_constants.dart';
 import 'skeleton_loader.dart';
 
 class MarketplaceAnalyticsView extends StatefulWidget {
@@ -49,7 +50,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   void _initSocket() {
     try {
-      final socketUri = 'http://localhost:5000';
+      final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
         socketUri,
         IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
@@ -75,11 +76,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
     List<Map<String, dynamic>> fetchedCategories = [];
     List<Map<String, dynamic>> fetchedUsers = [];
 
-    final candidateBases = [
-      'http://localhost:5000/api',
-      'http://192.168.1.34:5000/api',
-      'http://10.0.2.2:5000/api',
-    ];
+    final candidateBases = ApiConstants.candidateBaseUrls.map((b) => '$b/api').toList();
 
     for (final base in candidateBases) {
       try {

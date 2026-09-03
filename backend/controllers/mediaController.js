@@ -65,7 +65,13 @@ exports.getR2MediaImages = async (req, res) => {
       }
     } catch (r2Err) {}
 
-    // 3. Include all R2 image URLs from MongoDB Collections
+    // 3. Include all R2 image/video URLs from MongoDB Collections
+    let workoutCategories = [];
+    try {
+      const WorkoutCategory = require('../models/WorkoutCategory');
+      workoutCategories = await WorkoutCategory.find().select('mediaUrl').lean();
+    } catch (_) {}
+
     const [products, categories, subcategories, banners] = await Promise.all([
       Product.find().select('mainImageUrl additionalImages').lean(),
       Category.find().select('imageUrl').lean(),
@@ -92,6 +98,10 @@ exports.getR2MediaImages = async (req, res) => {
 
     for (const b of banners) {
       if (b.imageUrl && b.imageUrl.includes('r2.dev')) urlSet.add(b.imageUrl);
+    }
+
+    for (const w of workoutCategories) {
+      if (w.mediaUrl && w.mediaUrl.includes('r2.dev')) urlSet.add(w.mediaUrl);
     }
 
     const allR2Images = Array.from(urlSet).filter((url) => url && typeof url === 'string' && url.includes('r2.dev'));
@@ -173,21 +183,68 @@ exports.serveMediaFile = async (req, res) => {
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
 
+    const ext = path.extname(filename).toLowerCase();
+    const mimeMap = {
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime',
+      '.webm': 'video/webm',
+      '.mkv': 'video/x-matroska',
+      '.avi': 'video/x-msvideo',
+      '.gif': 'image/gif',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+    };
+    const inferredMime = mimeMap[ext] || 'image/jpeg';
+
+    // 1. Serve from local uploads directory if present
     if (fs.existsSync(localFilePath)) {
+      res.setHeader('Content-Type', inferredMime);
       return res.sendFile(localFilePath);
     }
 
-    // Try S3 GetObject
+    // 2. Try S3 GetObject Command
     try {
       const bucketName = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'neurofit';
       const command = new GetObjectCommand({ Bucket: bucketName, Key: `uploads/${filename}` });
       const s3Data = await s3Client.send(command);
       if (s3Data.Body) {
-        res.setHeader('Content-Type', s3Data.ContentType || 'image/jpeg');
+        res.setHeader('Content-Type', (s3Data.ContentType && s3Data.ContentType !== 'application/octet-stream') ? s3Data.ContentType : inferredMime);
         return s3Data.Body.pipe(res);
       }
     } catch (_) {}
+
+    // 3. Fallback: Fetch directly from Cloudflare R2 Public Dev URL & stream + cache locally
+    const publicDevUrl = process.env.CLOUDFLARE_R2_PUBLIC_DEV_URL || 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev';
+    const r2CandidateUrls = [
+      `${publicDevUrl}/uploads/${filename}`,
+      `${publicDevUrl}/${filename}`,
+    ];
+
+    for (const r2Url of r2CandidateUrls) {
+      try {
+        const response = await axios({
+          method: 'get',
+          url: r2Url,
+          responseType: 'arraybuffer',
+          timeout: 6000,
+        });
+
+        if (response.status === 200 && response.data) {
+          // Cache on local disk for instant subsequent loads
+          try {
+            fs.writeFileSync(localFilePath, response.data);
+          } catch (_) {}
+
+          res.setHeader('Content-Type', inferredMime);
+          return res.send(response.data);
+        }
+      } catch (_) {}
+    }
 
     res.status(404).send('Image not found');
   } catch (err) {
@@ -205,6 +262,7 @@ exports.proxyMediaImage = async (req, res) => {
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
 
     // 1. If file exists locally in uploads directory, serve directly
     const filename = url.split('/').pop().split('?')[0];
@@ -218,12 +276,18 @@ exports.proxyMediaImage = async (req, res) => {
       const response = await axios({
         method: 'get',
         url: url,
-        responseType: 'stream',
+        responseType: 'arraybuffer',
         timeout: 6000,
       });
 
-      res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
-      return response.data.pipe(res);
+      if (response.status === 200 && response.data) {
+        try {
+          fs.writeFileSync(localFilePath, response.data);
+        } catch (_) {}
+
+        res.setHeader('Content-Type', response.headers['content-type'] || 'image/jpeg');
+        return res.send(response.data);
+      }
     } catch (_) {
       // Try S3 GetObject fallback
       try {

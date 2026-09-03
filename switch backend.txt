@@ -1,0 +1,20 @@
+In Neurofit-app:
+Open 
+
+Neurofit-app/lib/constants/api_constants.dart
+:
+
+dart
+// Set to `true` to connect to Local Backend (http://localhost:5000)
+// Set to `false` to connect to Live Render Backend (https://neurofit-full.onrender.com)
+static const bool useLocalBackend = true;
+In neurofitadmin:
+Open 
+
+neurofitadmin/lib/constants/api_constants.dart
+:
+
+dart
+// Set to `true` to connect to Local Backend (http://localhost:5000)
+// Set to `false` to connect to Live Render Backend (https://neurofit-full.onrender.com)
+static const bool useLocalBackend = true;

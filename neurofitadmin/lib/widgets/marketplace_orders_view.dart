@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/category_backend_service.dart';
+import '../constants/api_constants.dart';
 import 'skeleton_loader.dart';
 
 class MarketplaceOrdersView extends StatefulWidget {
@@ -54,7 +55,7 @@ class _MarketplaceOrdersViewState extends State<MarketplaceOrdersView> {
 
   void _initSocket() {
     try {
-      final socketUri = 'http://localhost:5000';
+      final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
         socketUri,
         IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
@@ -87,11 +88,7 @@ class _MarketplaceOrdersViewState extends State<MarketplaceOrdersView> {
   Future<void> _fetchOrders({bool silent = false}) async {
     if (!silent) setState(() => _isLoading = true);
 
-    final candidateUrls = [
-      'http://localhost:5000/api/orders',
-      'http://192.168.1.34:5000/api/orders',
-      'http://10.0.2.2:5000/api/orders',
-    ];
+    final candidateUrls = ApiConstants.candidateBaseUrls.map((b) => '$b/api/orders').toList();
 
     for (final url in candidateUrls) {
       try {
@@ -116,11 +113,7 @@ class _MarketplaceOrdersViewState extends State<MarketplaceOrdersView> {
   }
 
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
-    final candidateUrls = [
-      'http://localhost:5000/api/orders/$orderId/status',
-      'http://192.168.1.34:5000/api/orders/$orderId/status',
-      'http://10.0.2.2:5000/api/orders/$orderId/status',
-    ];
+    final candidateUrls = ApiConstants.candidateBaseUrls.map((b) => '$b/api/orders/$orderId/status').toList();
 
     for (final url in candidateUrls) {
       try {

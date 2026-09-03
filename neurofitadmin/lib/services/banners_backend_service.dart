@@ -14,6 +14,9 @@ class BannerModel {
   String subtitle;
   String imageUrl;
   String imageKey;
+  String mediaType; // 'image', 'gif', 'video'
+  bool showTitle;
+  bool showHeading;
   String targetType; // 'category', 'product', 'offer', 'brand'
   String targetId;
   String targetName;
@@ -33,6 +36,9 @@ class BannerModel {
     this.subtitle = '',
     required this.imageUrl,
     String? imageKey,
+    this.mediaType = 'image',
+    this.showTitle = true,
+    this.showHeading = true,
     this.targetType = 'category',
     this.targetId = '',
     this.targetName = '',
@@ -53,14 +59,30 @@ class BannerModel {
     final bId = json['bannerId'] ?? json['id'] ?? json['_id'] ?? '';
     final statusStr = json['status'] ?? 'Active';
     final bool active = json['isActive'] ?? (statusStr.toString().toLowerCase() == 'active');
+    final img = json['imageUrl'] ?? '';
+    final lower = img.toString().toLowerCase();
+
+    String mType = json['mediaType'] ?? '';
+    if (mType.isEmpty) {
+      if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm')) {
+        mType = 'video';
+      } else if (lower.endsWith('.gif')) {
+        mType = 'gif';
+      } else {
+        mType = 'image';
+      }
+    }
 
     return BannerModel(
       bannerId: bId,
       id: bId,
       title: json['title'] ?? '',
       subtitle: json['subtitle'] ?? '',
-      imageUrl: json['imageUrl'] ?? '',
+      imageUrl: img,
       imageKey: json['imageKey'] ?? '',
+      mediaType: mType,
+      showTitle: json['showTitle'] ?? true,
+      showHeading: json['showHeading'] ?? json['showTitle'] ?? true,
       targetType: json['targetType'] ?? 'category',
       targetId: json['targetId'] ?? '',
       targetName: json['targetName'] ?? '',
@@ -73,6 +95,29 @@ class BannerModel {
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now() : DateTime.now(),
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now() : DateTime.now(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'bannerId': bannerId,
+      'title': title,
+      'subtitle': subtitle,
+      'imageUrl': imageUrl,
+      'imageKey': imageKey,
+      'mediaType': mediaType,
+      'showTitle': showTitle,
+      'showHeading': showHeading,
+      'targetType': targetType,
+      'targetId': targetId,
+      'targetName': targetName,
+      'buttonText': buttonText,
+      'badge': badge,
+      'sortOrder': sortOrder,
+      'status': status,
+      'isActive': isActive,
+      'discountCode': discountCode,
+    };
   }
 
   Map<String, dynamic> toFirestoreFields() {
@@ -163,7 +208,7 @@ class BannersBackendService extends ChangeNotifier {
 
   void _initSocket() {
     try {
-      final socketUri = 'http://localhost:5000';
+      final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
         socketUri,
         IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
@@ -233,8 +278,7 @@ class BannersBackendService extends ChangeNotifier {
     // 1. Fetch from MongoDB Atlas Backend REST API
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/banners',
-      'http://localhost:5000/api/banners',
-      'http://10.0.2.2:5000/api/banners',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/banners'),
     ];
 
     for (final url in backendUrls) {
@@ -300,6 +344,9 @@ class BannersBackendService extends ChangeNotifier {
     required String imageFileName,
     required Uint8List imageBytes,
     int sortOrder = 1,
+    String mediaType = 'image',
+    bool showTitle = true,
+    bool showHeading = true,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -323,6 +370,9 @@ class BannersBackendService extends ChangeNotifier {
         discountCode: discountCode,
         imageUrl: uploadedUrl,
         sortOrder: sortOrder,
+        mediaType: mediaType,
+        showTitle: showTitle,
+        showHeading: showHeading,
       );
     } catch (e) {
       debugPrint('Error creating banner: $e');
@@ -344,6 +394,9 @@ class BannersBackendService extends ChangeNotifier {
     String discountCode = '',
     required String imageUrl,
     int sortOrder = 1,
+    String mediaType = 'image',
+    bool showTitle = true,
+    bool showHeading = true,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -351,10 +404,16 @@ class BannersBackendService extends ChangeNotifier {
     try {
       final String bannerId = 'banner_${DateTime.now().millisecondsSinceEpoch}';
 
+      final lower = imageUrl.toLowerCase();
+      final finalMediaType = mediaType.isNotEmpty
+          ? mediaType
+          : (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm')
+              ? 'video'
+              : (lower.endsWith('.gif') ? 'gif' : 'image'));
+
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/banners',
-        'http://localhost:5000/api/banners',
-        'http://10.0.2.2:5000/api/banners',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/banners'),
       ];
 
       for (final url in backendUrls) {
@@ -368,6 +427,9 @@ class BannersBackendService extends ChangeNotifier {
               'title': title,
               'subtitle': subtitle,
               'imageUrl': imageUrl,
+              'mediaType': finalMediaType,
+              'showTitle': showTitle,
+              'showHeading': showHeading,
               'targetType': targetType,
               'targetId': targetId,
               'targetName': targetName,
@@ -409,6 +471,9 @@ class BannersBackendService extends ChangeNotifier {
     Uint8List? newImageBytes,
     String? newImageFileName,
     int? sortOrder,
+    String? mediaType,
+    bool? showTitle,
+    bool? showHeading,
   }) async {
     _isLoading = true;
     notifyListeners();
@@ -428,10 +493,15 @@ class BannersBackendService extends ChangeNotifier {
         if (uploadedUrl != null) finalImageUrl = uploadedUrl;
       }
 
+      final lower = finalImageUrl.toLowerCase();
+      final finalMediaType = mediaType ??
+          (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm')
+              ? 'video'
+              : (lower.endsWith('.gif') ? 'gif' : existing.mediaType));
+
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/banners/$bannerId',
-        'http://localhost:5000/api/banners/$bannerId',
-        'http://10.0.2.2:5000/api/banners/$bannerId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/banners/$bannerId'),
       ];
 
       for (final url in backendUrls) {
@@ -445,6 +515,9 @@ class BannersBackendService extends ChangeNotifier {
               'title': title,
               'subtitle': subtitle,
               'imageUrl': finalImageUrl,
+              'mediaType': finalMediaType,
+              'showTitle': showTitle ?? existing.showTitle,
+              'showHeading': showHeading ?? existing.showHeading,
               'targetType': targetType,
               'targetId': targetId,
               'targetName': targetName,
@@ -479,8 +552,7 @@ class BannersBackendService extends ChangeNotifier {
     try {
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/banners/$bannerId',
-        'http://localhost:5000/api/banners/$bannerId',
-        'http://10.0.2.2:5000/api/banners/$bannerId',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/banners/$bannerId'),
       ];
 
       for (final url in backendUrls) {
@@ -507,8 +579,7 @@ class BannersBackendService extends ChangeNotifier {
     try {
       final backendUrls = [
         '${ApiConstants.apiBaseUrl}/banners/reorder',
-        'http://localhost:5000/api/banners/reorder',
-        'http://10.0.2.2:5000/api/banners/reorder',
+        ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/banners/reorder'),
       ];
 
       for (final url in backendUrls) {

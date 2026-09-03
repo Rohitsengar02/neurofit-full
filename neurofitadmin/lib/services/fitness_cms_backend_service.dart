@@ -252,12 +252,63 @@ class FitnessCmsBackendService extends ChangeNotifier {
       );
 
       _items.insert(0, newItem);
-      
 
       notifier.completeUpload(imageUrl);
       return newItem;
     } catch (e) {
       notifier.failUpload(e.toString());
+      return null;
+    }
+  }
+
+  Future<FitnessCmsItemModel?> createCmsItemWithUrl({
+    required String type,
+    required String title,
+    required String subtitle,
+    required String targetType,
+    required String targetId,
+    required String targetName,
+    required String badge,
+    required String buttonText,
+    required int sortOrder,
+    required String imageUrl,
+  }) async {
+    try {
+      final String itId = 'fit_cms_${DateTime.now().millisecondsSinceEpoch}';
+      final now = DateTime.now();
+
+      final newItem = FitnessCmsItemModel(
+        itemId: itId,
+        type: type,
+        title: title,
+        subtitle: subtitle,
+        imageUrl: imageUrl,
+        targetType: targetType,
+        targetId: targetId,
+        targetName: targetName,
+        badge: badge,
+        buttonText: buttonText,
+        sortOrder: sortOrder,
+        status: 'Active',
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      final Uri firestoreUri = Uri.parse(
+        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/fitness_cms?key=$firebaseApiKey&documentId=$itId',
+      );
+
+      await http.post(
+        firestoreUri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'fields': newItem.toFirestoreFields()}),
+      );
+
+      _items.insert(0, newItem);
+      notifyListeners();
+      return newItem;
+    } catch (e) {
       return null;
     }
   }

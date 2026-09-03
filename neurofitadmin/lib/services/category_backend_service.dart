@@ -216,14 +216,28 @@ class CategoryBackendService extends ChangeNotifier {
 
   static String getDisplayableImageUrl(String url) {
     if (url.isEmpty) return '';
-    if (url.contains('r2.dev') || url.startsWith('http://localhost:5000/uploads')) {
-      final fileName = url.split('/').last.split('?').first;
+
+    // 1. If already formatted as active API endpoint, return as is
+    if (url.contains('/api/media/file/') || url.contains('/api/media/proxy')) {
+      return url;
+    }
+
+    final trimmed = url.trim();
+
+    // 2. Handle Cloudflare R2 images & local upload filenames:
+    if (trimmed.contains('r2.dev') ||
+        trimmed.contains('/uploads/') ||
+        trimmed.contains('scaled_') ||
+        trimmed.startsWith('1788')) {
+      final fileName = trimmed.split('/').last.split('?').first;
       if (fileName.isNotEmpty && !fileName.contains(':')) {
         return '${ApiConstants.apiBaseUrl}/media/file/$fileName';
       }
-      return '${ApiConstants.apiBaseUrl}/media/proxy?url=${Uri.encodeComponent(url)}';
+      return '${ApiConstants.apiBaseUrl}/media/proxy?url=${Uri.encodeComponent(trimmed)}';
     }
-    return url;
+
+    // 3. For Unsplash, Pexels, or standard external CDN image URLs, return directly
+    return trimmed;
   }
 
   final List<CategoryModel> _categories = [];
@@ -370,9 +384,25 @@ class CategoryBackendService extends ChangeNotifier {
     try {
       onProgress?.call(0.25, 'Connecting to Cloudflare R2...');
       final cleanFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final lowerName = cleanFileName.toLowerCase();
       String mimeType = 'image/jpeg';
-      if (cleanFileName.endsWith('.png')) mimeType = 'image/png';
-      if (cleanFileName.endsWith('.webp')) mimeType = 'image/webp';
+      if (lowerName.endsWith('.png')) {
+        mimeType = 'image/png';
+      } else if (lowerName.endsWith('.webp')) {
+        mimeType = 'image/webp';
+      } else if (lowerName.endsWith('.gif')) {
+        mimeType = 'image/gif';
+      } else if (lowerName.endsWith('.mp4')) {
+        mimeType = 'video/mp4';
+      } else if (lowerName.endsWith('.mov')) {
+        mimeType = 'video/quicktime';
+      } else if (lowerName.endsWith('.webm')) {
+        mimeType = 'video/webm';
+      } else if (lowerName.endsWith('.mkv')) {
+        mimeType = 'video/x-matroska';
+      } else if (lowerName.endsWith('.avi')) {
+        mimeType = 'video/x-msvideo';
+      }
 
       // 1. Upload via Express Backend API (Bypasses browser CORS completely)
       final backendUploadUrls = [

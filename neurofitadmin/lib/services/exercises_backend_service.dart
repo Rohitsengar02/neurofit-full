@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../constants/api_constants.dart';
 import '../widgets/upload_progress_overlay.dart';
 import 'category_backend_service.dart';
-
 
 class ExerciseCategoryModel {
   final String categoryId;
@@ -30,45 +30,41 @@ class ExerciseCategoryModel {
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
-  Map<String, dynamic> toFirestoreFields() {
-    return {
-      'categoryId': {'stringValue': categoryId},
-      'id': {'stringValue': id},
-      'name': {'stringValue': name},
-      'title': {'stringValue': name},
-      'imageUrl': {'stringValue': imageUrl},
-      'exerciseCount': {'integerValue': exerciseCount.toString()},
-      'status': {'stringValue': status},
-      'createdAt': {'timestampValue': createdAt.toUtc().toIso8601String()},
-      'updatedAt': {'timestampValue': updatedAt.toUtc().toIso8601String()},
-    };
-  }
-
-  factory ExerciseCategoryModel.fromFirestoreDoc(Map<String, dynamic> doc) {
-    final String fullPath = doc['name'] ?? '';
-    final String docId = fullPath.split('/').last;
-    final fields = doc['fields'] as Map<String, dynamic>? ?? {};
-
-    final String cId = fields['categoryId']?['stringValue'] ?? fields['id']?['stringValue'] ?? docId;
-    final String name = fields['name']?['stringValue'] ?? fields['title']?['stringValue'] ?? 'Category';
-    final String imageUrl = fields['imageUrl']?['stringValue'] ?? '';
-    final int count = int.tryParse(fields['exerciseCount']?['integerValue']?.toString() ?? '0') ?? 0;
-    final String status = fields['status']?['stringValue'] ?? 'Active';
+  factory ExerciseCategoryModel.fromJson(Map<String, dynamic> json) {
+    final String cId = json['categoryId'] ?? json['id'] ?? json['_id'] ?? '';
+    final String name = json['name'] ?? json['title'] ?? 'Category';
+    final String imageUrl = json['imageUrl'] ?? json['image'] ?? '';
+    final int count = json['exerciseCount'] is int ? json['exerciseCount'] : int.tryParse(json['exerciseCount']?.toString() ?? '0') ?? 0;
+    final String status = json['status'] ?? (json['isActive'] == false ? 'Inactive' : 'Active');
 
     return ExerciseCategoryModel(
       categoryId: cId,
-      id: docId,
+      id: cId,
       name: name,
       imageUrl: imageUrl,
       exerciseCount: count,
       status: status,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'categoryId': categoryId,
+      'name': name,
+      'imageUrl': imageUrl,
+      'exerciseCount': exerciseCount,
+      'status': status,
+    };
+  }
+
+  Map<String, dynamic> toFirestoreFields() => toJson();
+  factory ExerciseCategoryModel.fromFirestoreDoc(Map<String, dynamic> doc) => ExerciseCategoryModel.fromJson(doc);
 }
 
 class ExerciseModel {
-  final String exerciseId;
-  final String id;
+  String exerciseId;
+  String id;
   String title;
   String categoryId;
   String categoryName;
@@ -103,291 +99,187 @@ class ExerciseModel {
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
-  Map<String, dynamic> toFirestoreFields() {
+  factory ExerciseModel.fromJson(Map<String, dynamic> json) {
+    final rawUrl = json['mediaUrl'] ?? json['imageUrl'] ?? json['gifUrl'] ?? json['videoUrl'] ?? '';
+    String mType = json['mediaType'] ?? 'image';
+    if (mType == 'image' && rawUrl.isNotEmpty) {
+      final lower = rawUrl.toLowerCase();
+      if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm')) {
+        mType = 'video';
+      } else if (lower.endsWith('.gif')) {
+        mType = 'gif';
+      }
+    }
+
+    String inst = '';
+    if (json['instructions'] is List) {
+      inst = (json['instructions'] as List).join('\n');
+    } else if (json['instructions'] != null) {
+      inst = json['instructions'].toString();
+    }
+
+    final idVal = (json['id'] ?? json['exerciseId'] ?? json['_id'] ?? '').toString();
+    final titleVal = (json['title'] ?? json['name'] ?? 'Exercise').toString();
+
+    return ExerciseModel(
+      exerciseId: idVal,
+      id: idVal,
+      title: titleVal,
+      categoryId: (json['categoryId'] ?? '').toString(),
+      categoryName: (json['categoryName'] ?? json['category'] ?? 'General').toString(),
+      mediaType: mType,
+      mediaUrl: rawUrl.toString(),
+      muscleGroup: (json['muscleGroup'] ?? 'Full Body').toString(),
+      difficulty: (json['difficulty'] ?? 'Intermediate').toString(),
+      equipment: (json['equipment'] ?? 'Bodyweight').toString(),
+      instructions: inst,
+      status: json['isActive'] == false ? 'Inactive' : 'Active',
+      isActive: json['isActive'] ?? true,
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
+      updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
     return {
-      'exerciseId': {'stringValue': exerciseId},
-      'id': {'stringValue': id},
-      'title': {'stringValue': title},
-      'name': {'stringValue': title},
-      'categoryId': {'stringValue': categoryId},
-      'categoryName': {'stringValue': categoryName},
-      'mediaType': {'stringValue': mediaType},
-      'mediaUrl': {'stringValue': mediaUrl},
-      'muscleGroup': {'stringValue': muscleGroup},
-      'difficulty': {'stringValue': difficulty},
-      'equipment': {'stringValue': equipment},
-      'instructions': {'stringValue': instructions},
-      'status': {'stringValue': status},
-      'isActive': {'booleanValue': isActive},
-      'createdAt': {'timestampValue': createdAt.toUtc().toIso8601String()},
-      'updatedAt': {'timestampValue': updatedAt.toUtc().toIso8601String()},
+      'id': id.isNotEmpty ? id : exerciseId,
+      'exerciseId': exerciseId.isNotEmpty ? exerciseId : id,
+      'title': title,
+      'categoryId': categoryId,
+      'categoryName': categoryName,
+      'category': categoryName,
+      'mediaType': mediaType,
+      'mediaUrl': mediaUrl,
+      'imageUrl': mediaUrl,
+      'muscleGroup': muscleGroup,
+      'difficulty': difficulty,
+      'equipment': equipment,
+      'instructions': instructions,
+      'status': status,
+      'isActive': isActive,
     };
   }
 
-  factory ExerciseModel.fromFirestoreDoc(Map<String, dynamic> doc) {
-    final String fullPath = doc['name'] ?? '';
-    final String docId = fullPath.split('/').last;
-    final fields = doc['fields'] as Map<String, dynamic>? ?? {};
-
-    final String eId = fields['exerciseId']?['stringValue'] ?? fields['id']?['stringValue'] ?? docId;
-    final String title = fields['title']?['stringValue'] ?? fields['name']?['stringValue'] ?? 'Exercise';
-    final String categoryId = fields['categoryId']?['stringValue'] ?? '';
-    final String categoryName = fields['categoryName']?['stringValue'] ?? 'General';
-    final String mediaType = fields['mediaType']?['stringValue'] ?? 'gif';
-    final String mediaUrl = fields['mediaUrl']?['stringValue'] ?? '';
-    final String muscleGroup = fields['muscleGroup']?['stringValue'] ?? 'Full Body';
-    final String difficulty = fields['difficulty']?['stringValue'] ?? 'Intermediate';
-    final String equipment = fields['equipment']?['stringValue'] ?? 'Barbell';
-    final String instructions = fields['instructions']?['stringValue'] ?? '';
-    final String status = fields['status']?['stringValue'] ?? 'Active';
-    final bool isActive = fields['isActive']?['booleanValue'] ?? (status == 'Active');
-
-    return ExerciseModel(
-      exerciseId: eId,
-      id: docId,
-      title: title,
-      categoryId: categoryId,
-      categoryName: categoryName,
-      mediaType: mediaType,
-      mediaUrl: mediaUrl,
-      muscleGroup: muscleGroup,
-      difficulty: difficulty,
-      equipment: equipment,
-      instructions: instructions,
-      status: status,
-      isActive: isActive,
-    );
-  }
+  Map<String, dynamic> toFirestoreFields() => toJson();
+  factory ExerciseModel.fromFirestoreDoc(Map<String, dynamic> doc) => ExerciseModel.fromJson(doc);
 }
 
 class ExercisesBackendService extends ChangeNotifier {
-  bool _isLoading = false;
-  bool get isLoading => _isLoading;
   static final ExercisesBackendService _instance = ExercisesBackendService._internal();
   factory ExercisesBackendService() => _instance;
+
   ExercisesBackendService._internal() {
-    fetchCategoriesFromFirestore();
-    fetchExercisesFromFirestore();
+    _initSocket();
+    fetchExercises();
   }
 
-  static const String firebaseProjectId = 'neurofit-52fe0';
-  static const String firebaseApiKey = 'AIzaSyDcGovQH3Sd_0kdNeSISK6eNCdtjA_g9vg';
+  IO.Socket? _socket;
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
 
-  final List<ExerciseCategoryModel> _categories = [
-    ExerciseCategoryModel(categoryId: 'excat_chest', name: 'Chest & Pecs', imageUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/gym_equipment.jpg', exerciseCount: 42),
-    ExerciseCategoryModel(categoryId: 'excat_back', name: 'Back & Lats', imageUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/gym_equipment.jpg', exerciseCount: 38),
-    ExerciseCategoryModel(categoryId: 'excat_legs', name: 'Legs & Glutes', imageUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/footwear.jpg', exerciseCount: 54),
-    ExerciseCategoryModel(categoryId: 'excat_arms', name: 'Arms (Biceps & Triceps)', imageUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/whey_protein.jpg', exerciseCount: 48),
-    ExerciseCategoryModel(categoryId: 'excat_shoulders', name: 'Shoulders & Delts', imageUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/gym_equipment.jpg', exerciseCount: 32),
-    ExerciseCategoryModel(categoryId: 'excat_core', name: 'Abs & Core', imageUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/shaker.jpg', exerciseCount: 30),
-  ];
-
-  final List<ExerciseModel> _exercises = [
-    ExerciseModel(
-      exerciseId: 'ex_incline_dumbbell_press',
-      title: 'Incline Dumbbell Chest Press',
-      categoryId: 'excat_chest',
-      categoryName: 'Chest & Pecs',
-      mediaType: 'gif',
-      mediaUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/gym_equipment.jpg',
-      muscleGroup: 'Upper Chest & Front Deltoids',
-      difficulty: 'Intermediate',
-      equipment: 'Incline Bench & Dumbbells',
-      instructions: 'Set bench to 30 degrees. Retract shoulder blades, press dumbbells upward in a slight arc, and control the eccentric descent for 3 seconds.',
-      status: 'Active',
-    ),
-    ExerciseModel(
-      exerciseId: 'ex_barbell_deadlift',
-      title: 'Conventional Barbell Deadlift',
-      categoryId: 'excat_back',
-      categoryName: 'Back & Lats',
-      mediaType: 'video',
-      mediaUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/gym_equipment.jpg',
-      muscleGroup: 'Hamstrings, Glutes & Erector Spinae',
-      difficulty: 'Advanced',
-      equipment: 'Olympic Barbell & Bumper Plates',
-      instructions: 'Stand mid-foot under the bar. Grip bar just outside legs, engage lats, drive through the floor, and lock out hips with neutral spine.',
-      status: 'Active',
-    ),
-    ExerciseModel(
-      exerciseId: 'ex_bulgarian_split_squat',
-      title: 'Dumbbell Bulgarian Split Squat',
-      categoryId: 'excat_legs',
-      categoryName: 'Legs & Glutes',
-      mediaType: 'image',
-      mediaUrl: 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev/uploads/footwear.jpg',
-      muscleGroup: 'Quadriceps, Gluteus Medius',
-      difficulty: 'Intermediate',
-      equipment: 'Flat Bench & Dumbbells',
-      instructions: 'Elevate rear foot on bench. Descend vertically until front thigh is parallel with floor, driving through the heel on the concentric phase.',
-      status: 'Active',
-    ),
-  ];
+  final List<ExerciseCategoryModel> _categories = [];
+  final List<ExerciseModel> _exercises = [];
 
   List<ExerciseCategoryModel> get categories => List.unmodifiable(_categories);
+  List<ExerciseCategoryModel> get activeCategories => _categories;
   List<ExerciseModel> get exercises => List.unmodifiable(_exercises);
+  List<ExerciseModel> get activeExercises => _exercises.where((e) => e.isActive).toList();
 
-  /// Fetch Categories from Firestore
-  Future<void> fetchCategoriesFromFirestore() async {
+  // Socket.IO Connection for Real-Time CRUD Updates
+  void _initSocket() {
     try {
-      
+      final socketUrl = ApiConstants.baseUrl;
+      _socket = IO.io(socketUrl, <String, dynamic>{
+        'transports': ['websocket'],
+        'autoConnect': true,
+      });
 
-      final Uri uri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercise_categories?key=$firebaseApiKey',
-      );
+      _socket?.onConnect((_) {
+        debugPrint('⚡ [ADMIN EXERCISES SOCKET CONNECTED] Realtime active');
+      });
 
-      final res = await http.get(uri);
+      _socket?.on('exercise_created', (data) {
+        if (data != null) {
+          final newEx = ExerciseModel.fromJson(Map<String, dynamic>.from(data));
+          _exercises.removeWhere((e) => e.id == newEx.id || e.exerciseId == newEx.exerciseId);
+          _exercises.insert(0, newEx);
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('exercise_updated', (data) {
+        if (data != null) {
+          final updatedEx = ExerciseModel.fromJson(Map<String, dynamic>.from(data));
+          final idx = _exercises.indexWhere((e) => e.id == updatedEx.id || e.exerciseId == updatedEx.exerciseId);
+          if (idx != -1) {
+            _exercises[idx] = updatedEx;
+          } else {
+            _exercises.insert(0, updatedEx);
+          }
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('exercise_deleted', (data) {
+        if (data != null && data['id'] != null) {
+          final id = data['id'].toString();
+          _exercises.removeWhere((e) => e.id == id || e.exerciseId == id);
+          notifyListeners();
+        }
+      });
+
+      _socket?.on('exercises_updated', (data) {
+        if (data is List) {
+          _exercises.clear();
+          for (var item in data) {
+            _exercises.add(ExerciseModel.fromJson(Map<String, dynamic>.from(item)));
+          }
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint('Error initializing admin exercises socket: $e');
+    }
+  }
+
+  // Backwards compatibility aliases
+  Future<void> fetchCategoriesFromFirestore() async {}
+  Future<void> fetchExercisesFromFirestore() => fetchExercises();
+
+  /// Fetch all exercises from Express MongoDB API
+  Future<void> fetchExercises() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final res = await http.get(Uri.parse('${ApiConstants.baseUrl}/api/exercises'));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final documents = data['documents'] as List<dynamic>?;
-        if (documents != null && documents.isNotEmpty) {
-          final List<ExerciseCategoryModel> fetched = [];
-          for (var doc in documents) {
-            fetched.add(ExerciseCategoryModel.fromFirestoreDoc(doc));
-          }
-          if (fetched.isNotEmpty) {
-            _categories.clear();
-            _categories.addAll(fetched); notifyListeners();
-          }
+        final body = jsonDecode(res.body);
+        List<dynamic> list = [];
+        if (body is Map && body['data'] is List) {
+          list = body['data'];
+        } else if (body is List) {
+          list = body;
+        }
+
+        _exercises.clear();
+        for (var item in list) {
+          _exercises.add(ExerciseModel.fromJson(Map<String, dynamic>.from(item)));
         }
       }
     } catch (e) {
-      debugPrint('Firestore fetch exercise categories error: $e');
+      debugPrint('Error fetching exercises from Express API: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  /// Fetch Exercises from Firestore
-  Future<void> fetchExercisesFromFirestore() async {
-    try {
-      
-
-      final Uri uri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercises?key=$firebaseApiKey',
-      );
-
-      final res = await http.get(uri);
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final documents = data['documents'] as List<dynamic>?;
-        if (documents != null && documents.isNotEmpty) {
-          final List<ExerciseModel> fetched = [];
-          for (var doc in documents) {
-            fetched.add(ExerciseModel.fromFirestoreDoc(doc));
-          }
-          if (fetched.isNotEmpty) {
-            _exercises.clear();
-            _exercises.addAll(fetched); notifyListeners();
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Firestore fetch exercises error: $e');
-    }
-  }
-
-  /// Create Exercise Category
-  Future<ExerciseCategoryModel?> createCategory({
-    required String name,
-    required String imageFileName,
-    required Uint8List imageBytes,
-  }) async {
-    final notifier = UploadProgressNotifier();
-    try {
-      notifier.startUpload(imageFileName);
-      final imageUrl = await CategoryBackendService().uploadRawImageToR2(
-        fileName: imageFileName,
-        imageBytes: imageBytes,
-        onProgress: (p, s) => notifier.updateProgress(p, customStatus: s),
-      );
-      if (imageUrl == null) throw Exception('Failed to upload category image to R2');
-
-      final cId = 'excat_${DateTime.now().millisecondsSinceEpoch}';
-      final newCat = ExerciseCategoryModel(
-        categoryId: cId,
-        id: cId,
-        name: name,
-        imageUrl: imageUrl,
-        exerciseCount: 0,
-        status: 'Active',
-      );
-
-      final Uri firestoreUri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercise_categories/$cId?key=$firebaseApiKey',
-      );
-
-      final fsRes = await http.patch(
-        firestoreUri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'fields': newCat.toFirestoreFields()}),
-      );
-
-      if (fsRes.statusCode < 200 || fsRes.statusCode >= 300) {
-        throw Exception('Firestore write failed with status ${fsRes.statusCode}: ${fsRes.body}');
-      }
-
-      _categories.add(newCat);
-      
-      notifier.completeUpload(imageUrl);
-      return newCat;
-    } catch (e) {
-      notifier.failUpload(e.toString());
-      return null;
-    }
-  }
-
-  /// Update Exercise Category
-  Future<void> updateCategory({
-    required String categoryId,
-    required String newName,
-    String? newImageUrl,
-  }) async {
-    final index = _categories.indexWhere((c) => c.categoryId == categoryId || c.id == categoryId);
-    if (index != -1) {
-      _categories[index].name = newName;
-      if (newImageUrl != null && newImageUrl.isNotEmpty) {
-        _categories[index].imageUrl = newImageUrl;
-      }
-      _categories[index].updatedAt = DateTime.now();
-
-      try {
-        final Uri firestoreUri = Uri.parse(
-          'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercise_categories/$categoryId?key=$firebaseApiKey',
-        );
-
-        await http.patch(
-          firestoreUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'fields': _categories[index].toFirestoreFields()}),
-        );
-
-        
-      } catch (e) {
-        debugPrint('Update category error: $e');
-      }
-    }
-  }
-
-  /// Delete Exercise Category
-  Future<void> deleteCategory(String categoryId) async {
-    _categories.removeWhere((c) => c.categoryId == categoryId || c.id == categoryId);
-
-    try {
-      final Uri firestoreUri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercise_categories/$categoryId?key=$firebaseApiKey',
-      );
-      await http.delete(firestoreUri);
-      
-    } catch (e) {
-      debugPrint('Delete category error: $e');
-    }
-  }
-
-  /// Create Exercise with GIF, MP4 Video, or Image
+  /// Create Exercise with Media Upload
   Future<ExerciseModel?> createExercise({
     required String title,
     required String categoryId,
     required String categoryName,
-    required String mediaType, // 'gif', 'video', 'image'
+    required String mediaType,
     required String muscleGroup,
     required String difficulty,
     required String equipment,
@@ -402,12 +294,12 @@ class ExercisesBackendService extends ChangeNotifier {
       final mediaUrl = await CategoryBackendService().uploadRawImageToR2(
         fileName: mediaFileName,
         imageBytes: mediaBytes,
-        onProgress: (p, s) => notifier.updateProgress(p, customStatus: 'Streaming $mediaType media: $s'),
+        onProgress: (p, s) => notifier.updateProgress(p, customStatus: 'Uploading $mediaType media: $s'),
       );
 
       if (mediaUrl == null) throw Exception('Failed to upload $mediaType to Cloudflare R2');
 
-      notifier.updateProgress(0.90, customStatus: 'Writing exercise to Firestore...');
+      notifier.updateProgress(0.90, customStatus: 'Saving exercise to database...');
 
       final eId = 'ex_${DateTime.now().millisecondsSinceEpoch}';
       final newExercise = ExerciseModel(
@@ -426,73 +318,119 @@ class ExercisesBackendService extends ChangeNotifier {
         isActive: true,
       );
 
-      final Uri firestoreUri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercises/$eId?key=$firebaseApiKey',
-      );
-
-      final fsRes = await http.patch(
-        firestoreUri,
+      final res = await http.post(
+        Uri.parse('${ApiConstants.baseUrl}/api/exercises'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'fields': newExercise.toFirestoreFields()}),
+        body: jsonEncode(newExercise.toJson()),
       );
 
-      if (fsRes.statusCode < 200 || fsRes.statusCode >= 300) {
-        throw Exception('Firestore write failed with status ${fsRes.statusCode}: ${fsRes.body}');
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final body = jsonDecode(res.body);
+        final createdData = body['data'] ?? body;
+        final createdEx = ExerciseModel.fromJson(Map<String, dynamic>.from(createdData));
+
+        _exercises.removeWhere((e) => e.id == createdEx.id);
+        _exercises.insert(0, createdEx);
+
+        notifier.completeUpload(mediaUrl);
+        notifyListeners();
+        return createdEx;
+      } else {
+        throw Exception('Server error (${res.statusCode}): ${res.body}');
       }
-
-      // Increment category count
-      final cIndex = _categories.indexWhere((c) => c.categoryId == categoryId);
-      if (cIndex != -1) {
-        _categories[cIndex].exerciseCount += 1;
-      }
-
-      _exercises.insert(0, newExercise);
-      
-
-      notifier.completeUpload(mediaUrl);
-      return newExercise;
     } catch (e) {
       notifier.failUpload(e.toString());
+      debugPrint('Create exercise error: $e');
       return null;
     }
   }
 
+  /// Create Exercise using existing R2 URL
+  Future<ExerciseModel?> createExerciseWithUrl({
+    required String title,
+    required String categoryId,
+    required String categoryName,
+    required String mediaType,
+    required String muscleGroup,
+    required String difficulty,
+    required String equipment,
+    required String instructions,
+    required String mediaUrl,
+  }) async {
+    try {
+      final eId = 'ex_${DateTime.now().millisecondsSinceEpoch}';
+      final newExercise = ExerciseModel(
+        exerciseId: eId,
+        id: eId,
+        title: title,
+        categoryId: categoryId,
+        categoryName: categoryName,
+        mediaType: mediaType,
+        mediaUrl: mediaUrl,
+        muscleGroup: muscleGroup,
+        difficulty: difficulty,
+        equipment: equipment,
+        instructions: instructions,
+        status: 'Active',
+        isActive: true,
+      );
+
+      final res = await http.post(
+        Uri.parse('${ApiConstants.baseUrl}/api/exercises'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(newExercise.toJson()),
+      );
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final body = jsonDecode(res.body);
+        final createdData = body['data'] ?? body;
+        final createdEx = ExerciseModel.fromJson(Map<String, dynamic>.from(createdData));
+
+        _exercises.removeWhere((e) => e.id == createdEx.id);
+        _exercises.insert(0, createdEx);
+        notifyListeners();
+        return createdEx;
+      }
+    } catch (e) {
+      debugPrint('Error creating exercise with URL: $e');
+    }
+    return null;
+  }
+
   /// Update Exercise
   Future<void> updateExercise(ExerciseModel ex) async {
-    final index = _exercises.indexWhere((e) => e.exerciseId == ex.exerciseId || e.id == ex.exerciseId);
+    final targetId = ex.id.isNotEmpty ? ex.id : ex.exerciseId;
+    final index = _exercises.indexWhere((e) => e.id == targetId || e.exerciseId == targetId);
     if (index != -1) {
       _exercises[index] = ex;
+      notifyListeners();
+    }
 
-      try {
-        final Uri firestoreUri = Uri.parse(
-          'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercises/${ex.exerciseId}?key=$firebaseApiKey',
-        );
-
-        await http.patch(
-          firestoreUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'fields': ex.toFirestoreFields()}),
-        );
-
-        
-      } catch (e) {
-        debugPrint('Update exercise error: $e');
-      }
+    try {
+      await http.put(
+        Uri.parse('${ApiConstants.baseUrl}/api/exercises/$targetId'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(ex.toJson()),
+      );
+    } catch (e) {
+      debugPrint('Update exercise error: $e');
     }
   }
 
   /// Delete Exercise
   Future<void> deleteExercise(String exerciseId) async {
     _exercises.removeWhere((e) => e.exerciseId == exerciseId || e.id == exerciseId);
+    notifyListeners();
 
     try {
-      final Uri firestoreUri = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$firebaseProjectId/databases/(default)/documents/exercises/$exerciseId?key=$firebaseApiKey',
-      );
-      await http.delete(firestoreUri);
-      
+      await http.delete(Uri.parse('${ApiConstants.baseUrl}/api/exercises/$exerciseId'));
     } catch (e) {
       debugPrint('Delete exercise error: $e');
     }
   }
+
+  // Category dummy methods
+  Future<ExerciseCategoryModel?> createCategory({required String name, required String imageFileName, required Uint8List imageBytes}) async => null;
+  Future<void> updateCategory({required String categoryId, required String newName, String? newImageUrl}) async {}
+  Future<void> deleteCategory(String categoryId) async {}
 }

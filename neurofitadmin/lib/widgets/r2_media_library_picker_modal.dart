@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +7,7 @@ import '../constants/api_constants.dart';
 import '../services/products_backend_service.dart';
 import '../services/category_backend_service.dart';
 import '../services/banners_backend_service.dart';
+import '../services/workout_category_backend_service.dart';
 
 class R2MediaLibraryPickerModal extends StatefulWidget {
   final Function(String selectedImageUrl) onImageSelected;
@@ -33,10 +33,12 @@ class R2MediaLibraryPickerModal extends StatefulWidget {
 class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  String _mediaFilter = 'all'; // 'all', 'images', 'videos'
   String? _currentlySelectedUrl;
   final List<String> _mediaUrls = [];
   bool _isLoadingR2 = true;
   bool _isUploadingNew = false;
+  String _uploadStatusText = '';
 
   @override
   void initState() {
@@ -50,16 +52,41 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
     super.dispose();
   }
 
+  bool _isVideoUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mkv') ||
+        lower.endsWith('.avi');
+  }
+
+  bool _isGifUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.endsWith('.gif');
+  }
+
   Future<void> _pickAndUploadNewImage() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final XFile? file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      XFile? file;
+      try {
+        file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      } catch (_) {}
+      file ??= await picker.pickMedia();
+
       if (file != null) {
-        setState(() => _isUploadingNew = true);
+        setState(() {
+          _isUploadingNew = true;
+          _uploadStatusText = 'Uploading ${file!.name} to R2...';
+        });
         final Uint8List bytes = await file.readAsBytes();
         final uploadedUrl = await CategoryBackendService().uploadRawImageToR2(
           fileName: file.name,
           imageBytes: bytes,
+          onProgress: (prog, status) {
+            if (mounted) setState(() => _uploadStatusText = status);
+          },
         );
         if (uploadedUrl != null) {
           setState(() {
@@ -72,7 +99,53 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 backgroundColor: Color(0xFF10B981),
-                content: Text('✅ Image uploaded successfully to Cloudflare R2!'),
+                content: Text('✅ Image/GIF uploaded successfully to Cloudflare R2!'),
+              ),
+            );
+          }
+        } else {
+          setState(() => _isUploadingNew = false);
+        }
+      }
+    } catch (e) {
+      setState(() => _isUploadingNew = false);
+    }
+  }
+
+  Future<void> _pickAndUploadNewVideo() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      XFile? file;
+      try {
+        file = await picker.pickVideo(source: ImageSource.gallery);
+      } catch (_) {}
+      file ??= await picker.pickMedia();
+
+      if (file != null) {
+        setState(() {
+          _isUploadingNew = true;
+          _uploadStatusText = 'Uploading video ${file!.name} to R2...';
+        });
+        final Uint8List bytes = await file.readAsBytes();
+        final uploadedUrl = await CategoryBackendService().uploadRawImageToR2(
+          fileName: file.name,
+          imageBytes: bytes,
+          onProgress: (prog, status) {
+            if (mounted) setState(() => _uploadStatusText = status);
+          },
+        );
+        if (uploadedUrl != null) {
+          setState(() {
+            _mediaUrls.remove(uploadedUrl);
+            _mediaUrls.insert(0, uploadedUrl);
+            _currentlySelectedUrl = uploadedUrl;
+            _isUploadingNew = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: Color(0xFF0284C7),
+                content: Text('🎬 Video uploaded successfully to Cloudflare R2!'),
               ),
             );
           }
@@ -92,8 +165,7 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
     // 1. Fetch live objects directly from Cloudflare R2 bucket via Express API
     final backendUrls = [
       '${ApiConstants.apiBaseUrl}/media',
-      'http://localhost:5000/api/media',
-      'http://10.0.2.2:5000/api/media',
+      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/media'),
     ];
 
     for (final url in backendUrls) {
@@ -117,26 +189,31 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
     for (var prod in ProductsBackendService().products) {
       if (prod.images.isNotEmpty) {
         for (var img in prod.images) {
-          if (img.isNotEmpty && img.contains('r2.dev')) urlSet.add(img);
+          if (img.isNotEmpty) urlSet.add(img);
         }
       }
     }
     for (var cat in CategoryBackendService().categories) {
-      if (cat.imageUrl.isNotEmpty && cat.imageUrl.contains('r2.dev')) urlSet.add(cat.imageUrl);
+      if (cat.imageUrl.isNotEmpty) urlSet.add(cat.imageUrl);
     }
     for (var sub in CategoryBackendService().subCategories) {
-      if (sub.imageUrl.isNotEmpty && sub.imageUrl.contains('r2.dev')) urlSet.add(sub.imageUrl);
+      if (sub.imageUrl.isNotEmpty) urlSet.add(sub.imageUrl);
     }
     for (var ban in BannersBackendService().banners) {
-      if (ban.imageUrl.isNotEmpty && ban.imageUrl.contains('r2.dev')) urlSet.add(ban.imageUrl);
+      if (ban.imageUrl.isNotEmpty) urlSet.add(ban.imageUrl);
+    }
+    for (var wcat in WorkoutCategoryBackendService().categories) {
+      if (wcat.mediaUrl.isNotEmpty) urlSet.add(wcat.mediaUrl);
     }
 
-    final r2Only = urlSet.where((u) => u.contains('r2.dev')).toList();
+    final validMedia = urlSet
+        .where((u) => u.isNotEmpty && (u.contains('r2.dev') || u.contains('/uploads/') || u.contains('/media/') || u.contains('.')))
+        .toList();
 
     if (mounted) {
       setState(() {
         _mediaUrls.clear();
-        _mediaUrls.addAll(r2Only);
+        _mediaUrls.addAll(validMedia);
         if (_mediaUrls.isNotEmpty && _currentlySelectedUrl == null) {
           _currentlySelectedUrl = _mediaUrls.first;
         }
@@ -158,12 +235,17 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
   @override
   Widget build(BuildContext context) {
     final filteredUrls = _mediaUrls.where((u) {
+      if (_mediaFilter == 'images' && _isVideoUrl(u)) return false;
+      if (_mediaFilter == 'videos' && !_isVideoUrl(u)) return false;
       if (_searchQuery.isEmpty) return true;
       return u.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
 
+    final videoCount = _mediaUrls.where((u) => _isVideoUrl(u)).length;
+    final imageCount = _mediaUrls.where((u) => !_isVideoUrl(u)).length;
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: MediaQuery.of(context).size.height * 0.88,
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -181,7 +263,7 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
           ),
           const SizedBox(height: 14),
 
-          // Header Title + R2 CDN Badge + Upload Button
+          // Header Title + R2 CDN Badge + Upload Buttons
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
@@ -206,7 +288,7 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
                         ),
                         Text(
-                          '${filteredUrls.length} Uploaded CDN Assets Available',
+                          '${filteredUrls.length} Media Assets Available ($videoCount Videos, $imageCount Images)',
                           style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                         ),
                       ],
@@ -215,21 +297,36 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                 ),
                 Row(
                   children: [
+                    // Upload Image/GIF Button
                     ElevatedButton.icon(
                       onPressed: _isUploadingNew ? null : _pickAndUploadNewImage,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF6366F1),
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      icon: _isUploadingNew
-                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.upload_file_rounded, size: 16),
-                      label: Text(_isUploadingNew ? 'Uploading...' : 'Upload Image', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                      icon: const Icon(Icons.image_rounded, size: 15),
+                      label: const Text('Image/GIF', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
                     ),
                     const SizedBox(width: 8),
+
+                    // Upload Video Button
+                    ElevatedButton.icon(
+                      onPressed: _isUploadingNew ? null : _pickAndUploadNewVideo,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0284C7),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.videocam_rounded, size: 16),
+                      label: const Text('Upload Video', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                    ),
+                    const SizedBox(width: 8),
+
                     IconButton(
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
@@ -241,47 +338,88 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
           ),
           const SizedBox(height: 12),
 
-          // Search Field
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+          // Uploading Banner Indicator if in progress
+          if (_isUploadingNew)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 20),
+                  const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0284C7))),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      decoration: const InputDecoration(
-                        hintText: 'Search images by filename or URL...',
-                        hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      onChanged: (val) => setState(() => _searchQuery = val),
-                    ),
-                  ),
-                  if (_searchQuery.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        _searchCtrl.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                      child: const Icon(Icons.cancel_rounded, size: 18, color: Color(0xFF94A3B8)),
-                    ),
+                  Text(_uploadStatusText, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF0284C7))),
                 ],
               ),
             ),
+
+          // Search Field & Format Filters
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchCtrl,
+                            decoration: const InputDecoration(
+                              hintText: 'Search media by filename, .mp4, .gif, .png...',
+                              hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onChanged: (val) => setState(() => _searchQuery = val),
+                          ),
+                        ),
+                        if (_searchQuery.isNotEmpty)
+                          GestureDetector(
+                            onTap: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            child: const Icon(Icons.cancel_rounded, size: 16, color: Color(0xFF94A3B8)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Filter chips
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All', 'all', _mediaUrls.length),
+                      _buildFilterChip('Images', 'images', imageCount),
+                      _buildFilterChip('Videos', 'videos', videoCount),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
           // Media Grid
           Expanded(
@@ -304,18 +442,33 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.image_not_supported_rounded, size: 48, color: Color(0xFFCBD5E1)),
+                            const Icon(Icons.perm_media_rounded, size: 48, color: Color(0xFFCBD5E1)),
                             const SizedBox(height: 10),
-                            const Text('No uploaded R2 images found', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF64748B))),
+                            const Text('No uploaded R2 media found', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF64748B))),
                             const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              onPressed: _pickAndUploadNewImage,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6366F1),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              icon: const Icon(Icons.upload_file_rounded, size: 16, color: Colors.white),
-                              label: const Text('Upload First Image to R2', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: _pickAndUploadNewImage,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF6366F1),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.upload_file_rounded, size: 16, color: Colors.white),
+                                  label: const Text('Upload Image', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton.icon(
+                                  onPressed: _pickAndUploadNewVideo,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF0284C7),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.videocam_rounded, size: 16, color: Colors.white),
+                                  label: const Text('Upload Video', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -332,6 +485,8 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                         itemBuilder: (context, index) {
                           final url = filteredUrls[index];
                           final isSelected = _currentlySelectedUrl == url;
+                          final isVideo = _isVideoUrl(url);
+                          final isGif = _isGifUrl(url);
 
                           return GestureDetector(
                             onTap: () {
@@ -360,14 +515,69 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    Image.network(
-                                      CategoryBackendService.getDisplayableImageUrl(url),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(
-                                        color: const Color(0xFFF1F5F9),
-                                        child: const Icon(Icons.broken_image_rounded, color: Color(0xFF94A3B8)),
+                                    if (isVideo)
+                                      Container(
+                                        decoration: const BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(Icons.play_arrow_rounded, color: Color(0xFF38BDF8), size: 24),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0284C7),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: const Text('VIDEO', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white)),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Image.network(
+                                        CategoryBackendService.getDisplayableImageUrl(url),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, _) => Container(
+                                          color: const Color(0xFFF1F5F9),
+                                          child: const Icon(Icons.broken_image_rounded, color: Color(0xFF94A3B8)),
+                                        ),
+                                      ),
+
+                                    // Format indicator badge on top right
+                                    Positioned(
+                                      top: 6,
+                                      right: 6,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isVideo
+                                              ? const Color(0xFF0284C7)
+                                              : (isGif ? const Color(0xFFEC4899) : const Color(0xFF10B981)),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          isVideo ? 'VIDEO' : (isGif ? 'GIF' : 'IMG'),
+                                          style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Colors.white),
+                                        ),
                                       ),
                                     ),
+
                                     if (isSelected)
                                       Container(
                                         color: const Color(0xFF6366F1).withValues(alpha: 0.35),
@@ -375,9 +585,11 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                                           child: Icon(Icons.check_circle_rounded, color: Colors.white, size: 28),
                                         ),
                                       ),
+
                                     Positioned(
                                       bottom: 4,
                                       right: 4,
+                                      left: 4,
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                         decoration: BoxDecoration(
@@ -451,12 +663,70 @@ class _R2MediaLibraryPickerModalState extends State<R2MediaLibraryPickerModal> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   icon: const Icon(Icons.check_circle_rounded, size: 18),
-                  label: const Text('Use This Image', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  label: Text(
+                    _currentlySelectedUrl != null && _isVideoUrl(_currentlySelectedUrl!)
+                        ? 'Use This Video'
+                        : 'Use This Image',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, String value, int count) {
+    final isSelected = _mediaFilter == value;
+    return GestureDetector(
+      onTap: () => setState(() => _mediaFilter = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  )
+                ]
+              : [],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF6366F1).withValues(alpha: 0.12) : const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? const Color(0xFF6366F1) : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

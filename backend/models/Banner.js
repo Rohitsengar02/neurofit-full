@@ -7,6 +7,9 @@ const bannerSchema = new mongoose.Schema({
   subtitle: { type: String, default: '' },
   imageUrl: { type: String, required: true },
   imageKey: { type: String, default: '' },
+  mediaType: { type: String, enum: ['image', 'gif', 'video'], default: 'image' },
+  showTitle: { type: Boolean, default: true },
+  showHeading: { type: Boolean, default: true },
   targetType: { 
     type: String, 
     enum: ['category', 'product', 'screen', 'url', 'custom', 'discount', 'General', 'Category', 'Product', 'Screen', 'ExternalUrl', ''],
