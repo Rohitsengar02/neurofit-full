@@ -1,11 +1,7 @@
-import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:http/http.dart' as http;
-import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/category_backend_service.dart';
-import '../constants/api_constants.dart';
+import '../backend/admin_data.dart';
 import 'skeleton_loader.dart';
 
 class MarketplaceAnalyticsView extends StatefulWidget {
@@ -24,176 +20,80 @@ class MarketplaceAnalyticsView extends StatefulWidget {
   State<MarketplaceAnalyticsView> createState() => _MarketplaceAnalyticsViewState();
 }
 
-class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
+class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> with LiveStats {
   int _selectedFilterIndex = 2; // 0=Today, 1=Yesterday, 2=This Week, 3=Last Week, 4=This Month, 5=This Year, 6=Custom
-  bool _isLoading = true;
-  IO.Socket? _socket;
 
-  List<Map<String, dynamic>> _orders = [];
-  List<Map<String, dynamic>> _products = [];
-  List<Map<String, dynamic>> _categories = [];
-  List<Map<String, dynamic>> _users = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchRealAnalyticsData();
-    _initSocket();
+  // Everything below comes from /admin/stats and /admin/insights (cached on the server,
+  // refreshed by socket events), so this screen never downloads every order or user.
+  Map<String, dynamic> get _m => ins.sec('marketplace');
+  num _mn(String k) => (_m[k] as num?) ?? 0;
+  List<Map<String, dynamic>> _ml(String k) => [for (final x in (_m[k] as List? ?? const [])) if (x is Map) Map<String, dynamic>.from(x)];
+  List<double> _mSeries(String k, [int days = 7]) {
+    final v = [for (final p in _ml(k)) ((p['value'] as num?) ?? 0).toDouble()];
+    return v.length > days ? v.sublist(v.length - days) : v;
   }
 
-  @override
-  void dispose() {
-    _socket?.disconnect();
-    _socket?.dispose();
-    super.dispose();
+  Future<void> _fetchRealAnalyticsData() async {
+    await Future.wait([AdminStats.I.load(force: true), AdminInsights.I.load(force: true)]);
   }
 
-  void _initSocket() {
-    // Demo build: no live server to listen to.
-    if (ApiConstants.demoMode) return;
-    try {
-      final socketUri = ApiConstants.socketUrl;
-      _socket = IO.io(
-        socketUri,
-        IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
-      );
+  double get _totalSalesRevenue => st.n('orders', 'revenue').toDouble();
 
-      _socket?.connect();
+  int get _totalOrdersCount => st.n('orders', 'total').toInt();
 
-      _socket?.on('order:created', (_) => _fetchRealAnalyticsData(silent: true));
-      _socket?.on('admin:new_order', (_) => _fetchRealAnalyticsData(silent: true));
-      _socket?.on('order:updated', (_) => _fetchRealAnalyticsData(silent: true));
-      _socket?.on('product_created', (_) => _fetchRealAnalyticsData(silent: true));
-      _socket?.on('product_updated', (_) => _fetchRealAnalyticsData(silent: true));
-      _socket?.on('products_updated', (_) => _fetchRealAnalyticsData(silent: true));
-      _socket?.on('user:updated', (_) => _fetchRealAnalyticsData(silent: true));
-    } catch (_) {}
-  }
+  double get _averageOrderValue => st.n('orders', 'avg_order_value').toDouble();
 
-  Future<void> _fetchRealAnalyticsData({bool silent = false}) async {
-    if (!silent) setState(() => _isLoading = true);
+  int get _totalProductsCount => st.n('catalog', 'products').toInt();
 
-    List<Map<String, dynamic>> fetchedOrders = [];
-    List<Map<String, dynamic>> fetchedProducts = [];
-    List<Map<String, dynamic>> fetchedCategories = [];
-    List<Map<String, dynamic>> fetchedUsers = [];
-
-    final candidateBases = ApiConstants.candidateBaseUrls.map((b) => '$b/api').toList();
-
-    for (final base in candidateBases) {
-      try {
-        final resOrders = await http.get(Uri.parse('$base/orders')).timeout(const Duration(seconds: 3));
-        if (resOrders.statusCode == 200) {
-          final body = jsonDecode(resOrders.body);
-          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedOrders = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        }
-
-        final resProducts = await http.get(Uri.parse('$base/products')).timeout(const Duration(seconds: 3));
-        if (resProducts.statusCode == 200) {
-          final body = jsonDecode(resProducts.body);
-          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedProducts = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        }
-
-        final resCategories = await http.get(Uri.parse('$base/categories')).timeout(const Duration(seconds: 3));
-        if (resCategories.statusCode == 200) {
-          final body = jsonDecode(resCategories.body);
-          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedCategories = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        }
-
-        final resUsers = await http.get(Uri.parse('$base/users')).timeout(const Duration(seconds: 3));
-        if (resUsers.statusCode == 200) {
-          final body = jsonDecode(resUsers.body);
-          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedUsers = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        }
-
-        if (fetchedOrders.isNotEmpty || fetchedProducts.isNotEmpty) break;
-      } catch (_) {}
-    }
-
-    if (mounted) {
-      setState(() {
-        _orders = fetchedOrders;
-        _products = fetchedProducts;
-        _categories = fetchedCategories;
-        _users = fetchedUsers;
-        _isLoading = false;
-      });
-    }
-  }
-
-  double get _totalSalesRevenue {
-    double total = 0;
-    for (final o in _orders) {
-      final status = (o['orderStatus'] ?? o['status'] ?? '').toString().toLowerCase();
-      if (status != 'cancelled') {
-        total += (o['totalAmount'] as num?)?.toDouble() ?? 0.0;
-      }
-    }
-    return total;
-  }
-
-  int get _totalOrdersCount => _orders.length;
-
-  double get _averageOrderValue => _totalOrdersCount > 0 ? _totalSalesRevenue / _totalOrdersCount : 0.0;
-
-  int get _totalProductsCount => _products.length;
-
-  int get _totalProductsSold {
-    int count = 0;
-    for (final o in _orders) {
-      final status = (o['orderStatus'] ?? o['status'] ?? '').toString().toLowerCase();
-      if (status != 'cancelled') {
-        final List items = o['items'] is List ? o['items'] : (o['itemList'] is List ? o['itemList'] : []);
-        for (final item in items) {
-          count += (item['quantity'] as num?)?.toInt() ?? 1;
-        }
-      }
-    }
-    return count;
-  }
+  int get _totalProductsSold => ins.list('orders', 'categories').fold<int>(0, (a, c) => a + ((c['qty'] as num?) ?? 0).toInt());
 
   Map<String, int> get _orderStatusCounts {
-    final Map<String, int> map = {
-      'Placed': 0,
-      'Processing': 0,
-      'Shipped': 0,
-      'Delivered': 0,
-      'Cancelled': 0,
-    };
-    for (final o in _orders) {
-      final s = (o['orderStatus'] ?? o['status'] ?? 'Placed').toString();
-      if (s.toLowerCase() == 'placed') map['Placed'] = (map['Placed'] ?? 0) + 1;
-      else if (s.toLowerCase() == 'processing') map['Processing'] = (map['Processing'] ?? 0) + 1;
-      else if (s.toLowerCase() == 'shipped' || s.toLowerCase() == 'out for delivery') map['Shipped'] = (map['Shipped'] ?? 0) + 1;
-      else if (s.toLowerCase() == 'delivered') map['Delivered'] = (map['Delivered'] ?? 0) + 1;
-      else if (s.toLowerCase() == 'cancelled') map['Cancelled'] = (map['Cancelled'] ?? 0) + 1;
-      else map['Placed'] = (map['Placed'] ?? 0) + 1;
+    final Map<String, int> map = {'Placed': 0, 'Processing': 0, 'Shipped': 0, 'Delivered': 0, 'Cancelled': 0};
+    for (final r in st.rows('ordersByStatus')) {
+      final s = (r['status'] ?? '').toString().toLowerCase();
+      final n = ((r['n'] as num?) ?? 0).toInt();
+      if (s == 'processing' || s == 'confirmed' || s == 'packed') map['Processing'] = map['Processing']! + n;
+      else if (s == 'shipped' || s == 'out for delivery') map['Shipped'] = map['Shipped']! + n;
+      else if (s == 'delivered') map['Delivered'] = map['Delivered']! + n;
+      else if (s == 'cancelled' || s == 'returned') map['Cancelled'] = map['Cancelled']! + n;
+      else map['Placed'] = map['Placed']! + n;
     }
     return map;
   }
 
-  Map<String, double> get _salesByPaymentMethod {
-    final Map<String, double> map = {
-      'UPI': 0,
-      'Credit/Debit Card': 0,
-      'Net Banking': 0,
-      'Cash on Delivery': 0,
-    };
-    for (final o in _orders) {
-      final pm = (o['paymentMethod'] ?? 'UPI').toString();
-      final double amt = (o['totalAmount'] as num?)?.toDouble() ?? 0.0;
-
-      if (pm.toUpperCase().contains('UPI')) map['UPI'] = (map['UPI'] ?? 0) + amt;
-      else if (pm.toUpperCase().contains('CARD')) map['Credit/Debit Card'] = (map['Credit/Debit Card'] ?? 0) + amt;
-      else if (pm.toUpperCase().contains('BANK')) map['Net Banking'] = (map['Net Banking'] ?? 0) + amt;
-      else map['Cash on Delivery'] = (map['Cash on Delivery'] ?? 0) + amt;
-    }
-    return map;
+  /// Payment split of marketplace orders, largest first.
+  List<Map<String, dynamic>> get _payRows {
+    final rows = ins.list('revenue', 'paymentMethods')..sort((a, b) => ((b['amount'] as num?) ?? 0).compareTo((a['amount'] as num?) ?? 0));
+    return rows;
   }
+
+  String _orderStatusLabel(String s) {
+    final l = s.toLowerCase();
+    if (l.contains('deliver')) return 'Delivered';
+    if (l.contains('ship') || l.contains('out for')) return 'Shipped';
+    if (l.contains('cancel') || l.contains('return')) return 'Cancelled';
+    if (l.contains('process') || l.contains('confirm') || l.contains('pack')) return 'Processing';
+    return 'Pending';
+  }
+
+  Color _orderStatusColor(String s) {
+    switch (_orderStatusLabel(s)) {
+      case 'Delivered': return const Color(0xFF10B981);
+      case 'Shipped': return const Color(0xFF3B82F6);
+      case 'Processing': return const Color(0xFF8B5CF6);
+      case 'Cancelled': return const Color(0xFFEF4444);
+      default: return const Color(0xFFF97316);
+    }
+  }
+
+  String _growth(num cur, num prev) {
+    if (prev == 0) return cur > 0 ? '+100%' : '0%';
+    final g = (cur - prev) / prev * 100;
+    return '${g >= 0 ? '+' : ''}${g.toStringAsFixed(1)}%';
+  }
+
+  List<double> get _sales7K => [for (final v in st.series('revenue', 7)) v / 1000];
+  double get _salesTop => top(_sales7K, 1);
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -335,7 +235,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                           children: [
                             const Icon(Icons.sync_rounded, size: 10, color: Color(0xFF10B981)),
                             const SizedBox(width: 4),
-                            Text('${_orders.length} Live Mongo Orders', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+                            Text('$_totalOrdersCount Live Orders', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
                           ],
                         ),
                       ),
@@ -378,7 +278,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   Widget _buildTop5KpisSection() {
     final kpis = [
-      {'title': 'Total Orders', 'val': '$_totalOrdersCount', 'growth': 'Live Mongo', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Total Orders', 'val': '$_totalOrdersCount', 'growth': 'All time', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
       {'title': 'Total Sales', 'val': '₹${_totalSalesRevenue.toStringAsFixed(0)}', 'growth': 'Live Revenue', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
       {'title': 'Catalog Products', 'val': '$_totalProductsCount', 'growth': 'Real Catalog', 'icon': Icons.inventory_2_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
       {'title': 'Items Sold', 'val': '$_totalProductsSold', 'growth': 'Products Sold', 'icon': Icons.local_shipping_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
@@ -497,27 +397,27 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('1. Sales Overview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-              _buildDropdownPill('Real MongoDB Feed'),
+              _buildDropdownPill('Live Feed'),
             ],
           ),
           const SizedBox(height: 6),
           Text('₹${_totalSalesRevenue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          Text('Live from ${_orders.length} total MongoDB orders', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('Live from $_totalOrdersCount orders', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 170,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: _salesTop / 5, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 100, getTitlesWidget: (v, meta) => Text('${v.toInt()}K', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: _salesTop / 5, getTitlesWidget: (v, meta) => Text(v >= 1 ? '${v.toStringAsFixed(v < 10 ? 1 : 0)}K' : '${(v * 1000).toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                        final days = weekdayLabels(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -533,10 +433,10 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 550,
+                maxY: _salesTop,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 150), FlSpot(1, 280), FlSpot(2, 350), FlSpot(3, 420), FlSpot(4, 380), FlSpot(5, 460), FlSpot(6, 510)],
+                    spots: [for (var i = 0; i < _sales7K.length; i++) FlSpot(i.toDouble(), _sales7K[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -629,22 +529,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
   }
 
   Widget _buildSalesByCategorySection() {
-    final Map<String, double> categorySales = {};
-    for (final o in _orders) {
-      final List items = o['items'] is List ? o['items'] : (o['itemList'] is List ? o['itemList'] : []);
-      for (final item in items) {
-        final cat = (item['categoryName'] ?? item['category'] ?? 'General Supplements').toString();
-        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
-        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
-        categorySales[cat] = (categorySales[cat] ?? 0) + (price * qty);
-      }
-    }
-
-    if (categorySales.isEmpty) {
-      categorySales['Nutritional Supplements'] = 14500;
-      categorySales['Fitness Equipment'] = 8900;
-      categorySales['Gym Apparel'] = 4500;
-    }
+    final Map<String, double> categorySales = {
+      for (final c in ins.list('orders', 'categories').take(5)) (c['label'] ?? 'Other').toString(): ((c['amount'] as num?) ?? 0).toDouble(),
+    };
 
     final double totalCatRev = categorySales.values.fold(0, (sum, item) => sum + item);
 
@@ -665,6 +552,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             ],
           ),
           const SizedBox(height: 16),
+          if (categorySales.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(child: Text('No category sales yet', style: TextStyle(color: Color(0xFF94A3B8)))),
+            ),
           ...categorySales.entries.map((e) {
             final Color color = colors[colorIdx % colors.length];
             colorIdx++;
@@ -703,27 +595,10 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   // 5. TOP SELLING PRODUCTS
   Widget _buildTopSellingProductsSection() {
-    final Map<String, Map<String, dynamic>> productStats = {};
-
-    for (final o in _orders) {
-      final List items = o['items'] is List ? o['items'] : (o['itemList'] is List ? o['itemList'] : []);
-      for (final item in items) {
-        final title = (item['title'] ?? item['name'] ?? 'Product Item').toString();
-        final img = (item['image'] ?? item['imageUrl'] ?? item['mainImageUrl'] ?? '').toString();
-        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
-        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
-
-        if (!productStats.containsKey(title)) {
-          productStats[title] = {'title': title, 'img': img, 'qty': 0, 'revenue': 0.0};
-        }
-        productStats[title]!['qty'] = (productStats[title]!['qty'] as int) + qty;
-        productStats[title]!['revenue'] = (productStats[title]!['revenue'] as double) + (price * qty);
-      }
-    }
-
-    final List<Map<String, dynamic>> topProductsList = productStats.values.toList();
-    topProductsList.sort((a, b) => (b['qty'] as int).compareTo(a['qty'] as int));
-    final displayList = topProductsList.take(5).toList();
+    final List<Map<String, dynamic>> displayList = [
+      for (final p in st.rows('topProducts').take(5))
+        {'title': (p['name'] ?? 'Product').toString(), 'img': (p['image'] ?? '').toString(), 'qty': ((p['qty'] as num?) ?? 0).toInt(), 'revenue': ((p['revenue'] as num?) ?? 0).toDouble()},
+    ];
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -791,7 +666,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
   }
 
   // 5. SALES BY PAYMENT METHOD
+  static const _payColors = [Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFFF59E0B), Color(0xFF8B5CF6), Color(0xFF06B6D4)];
+
   Widget _buildSalesByPaymentMethodSection() {
+    final pay = _payRows.take(5).toList();
+    final num payTotal = pay.fold<num>(0, (a, r) => a + ((r['amount'] as num?) ?? 0));
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade200)),
@@ -814,19 +693,17 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 54.8, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 26.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 10.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 5.8, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF06B6D4), value: 2.0, radius: 24, title: ''),
+                          for (var i = 0; i < pay.length; i++)
+                            PieChartSectionData(color: _payColors[i], value: ((pay[i]['amount'] as num?) ?? 0).toDouble() + (payTotal == 0 && i == 0 ? 1 : 0), radius: 24, title: ''),
+                          if (pay.isEmpty) PieChartSectionData(color: const Color(0xFFE2E8F0), value: 1, radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('₹24.58L', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Rev', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInrShort(payTotal), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Rev', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -836,15 +713,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'UPI', '54.8%'),
-                    const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Card', '26.7%'),
-                    const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF59E0B), 'COD', '10.7%'),
-                    const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Net Banking', '5.8%'),
-                    const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF06B6D4), 'Other', '2.0%'),
+                    for (var i = 0; i < pay.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      _buildDemographicRow(_payColors[i], (pay[i]['label'] ?? 'Other').toString(), share((pay[i]['amount'] as num?) ?? 0, payTotal)),
+                    ],
+                    if (pay.isEmpty) _buildDemographicRow(const Color(0xFFE2E8F0), 'No payments yet', '0%'),
                   ],
                 ),
               ),
@@ -857,8 +730,8 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   // 6. SALES TREND
   Widget _buildSalesTrendSection() {
-    final days = ['20', '21', '22', '23', '24', '25', '26'];
-    final revenues = [210.0, 310.0, 380.0, 490.0, 320.0, 420.0, 520.0];
+    final days = [for (final l in dayLabels(7)) l.split(' ').last];
+    final revenues = _sales7K;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -878,8 +751,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             height: 150,
             child: BarChart(
               BarChartData(
+                maxY: _salesTop,
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 100, getTitlesWidget: (v, meta) => Text('${v.toInt()}K', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: _salesTop / 5, getTitlesWidget: (v, meta) => Text(v >= 1 ? '${v.toStringAsFixed(v < 10 ? 1 : 0)}K' : '${(v * 1000).toInt()}', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -895,9 +769,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: _salesTop / 5, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 borderData: FlBorderData(show: false),
-                barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: revenues[i], color: i == 6 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 14, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
+                barGroups: List.generate(revenues.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: revenues[i], color: i == 6 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 14, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
               ),
             ),
           ),
@@ -908,12 +782,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   // 6. TOP VENDORS BY SALES
   Widget _buildTopVendorsBySalesSection() {
+    final vRows = _ml('vendors');
+    final num vTotal = vRows.fold<num>(0, (a, r) => a + ((r['amount'] as num?) ?? 0));
     final vendors = [
-      {'name': 'NutriFit Store', 'sales': '₹6,14,500 (25.0%)', 'img': 'assets/images/nutrifit_whey_protein.jpg'},
-      {'name': 'ProFit Gear', 'sales': '₹4,30,200 (17.5%)', 'img': 'assets/images/product_1.png'},
-      {'name': 'FitLab Nutrition', 'sales': '₹3,95,400 (16.1%)', 'img': 'assets/images/product_2.png'},
-      {'name': 'GymPro Apparel', 'sales': '₹2,94,900 (12.0%)', 'img': 'assets/images/trainers_hero_banner.jpg'},
-      {'name': 'ZenLife', 'sales': '₹2,45,800 (10.0%)', 'img': 'assets/images/hero_banner_1.png'},
+      for (final v in vRows)
+        {'name': (v['label'] ?? 'Store').toString(), 'sales': '${fmtInr((v['amount'] as num?) ?? 0)} (${share((v['amount'] as num?) ?? 0, vTotal)})', 'img': (v['image'] ?? '').toString()},
     ];
 
     return Container(
@@ -930,6 +803,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             ],
           ),
           const SizedBox(height: 14),
+          if (vendors.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(child: Text('No vendor sales yet', style: TextStyle(color: Color(0xFF94A3B8)))),
+            ),
           ...vendors.map((v) => Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(10),
@@ -938,7 +816,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(v['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.store)),
+                  child: (v['img'] as String).isEmpty
+                      ? const SizedBox(width: 34, height: 34, child: Icon(Icons.store))
+                      : Image.network(CategoryBackendService.getDisplayableImageUrl(v['img'] as String), width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.store)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -977,10 +857,10 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('Product Views', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
-                      SizedBox(height: 2),
-                      Text('125.4K', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                    children: [
+                      const Text('Product Views', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text(fmtShort(_mn('views7')), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                     ],
                   ),
                 ),
@@ -992,10 +872,10 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('Total Conversions', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
-                      SizedBox(height: 2),
-                      Text('2,540', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                    children: [
+                      const Text('Total Conversions', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text(fmtInt(_mn('orders_week')), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                     ],
                   ),
                 ),
@@ -1007,16 +887,16 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             height: 130,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 10, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_mSeries('viewsDaily'), 5) / 5, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 50,
+                maxY: top(_mSeries('viewsDaily'), 5),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 18), FlSpot(1, 28), FlSpot(2, 22), FlSpot(3, 35), FlSpot(4, 29), FlSpot(5, 42), FlSpot(6, 38)],
+                    spots: [for (final e in _mSeries('viewsDaily').asMap().entries) FlSpot(e.key.toDouble(), e.value)],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF8B5CF6),
@@ -1041,6 +921,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   // 7. INVENTORY STATUS
   Widget _buildInventoryStatusSection() {
+    final inv = _m['inventory'] is Map ? Map<String, dynamic>.from(_m['inventory'] as Map) : const <String, dynamic>{};
+    final num inStock = (inv['in_stock'] as num?) ?? 0, low = (inv['low'] as num?) ?? 0, out = (inv['out'] as num?) ?? 0;
+    final num invTotal = inStock + low + out;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade200)),
@@ -1069,17 +952,17 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 78.0, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 15.1, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFEF4444), value: 6.9, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: inStock.toDouble() + (invTotal == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF59E0B), value: low.toDouble(), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFEF4444), value: out.toDouble(), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('1,243', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Products', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(invTotal), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Products', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -1089,11 +972,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'In Stock', '970 (78.0%)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'In Stock', '${fmtInt(inStock)} (${share(inStock, invTotal)})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF59E0B), 'Low Stock', '188 (15.1%)'),
+                    _buildDemographicRow(const Color(0xFFF59E0B), 'Low Stock', '${fmtInt(low)} (${share(low, invTotal)})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFEF4444), 'Out of Stock', '85 (6.9%)'),
+                    _buildDemographicRow(const Color(0xFFEF4444), 'Out of Stock', '${fmtInt(out)} (${share(out, invTotal)})'),
                   ],
                 ),
               ),
@@ -1106,6 +989,9 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
 
   // 7. AVERAGE ORDER VALUE
   Widget _buildAverageOrderValueSection() {
+    final aov7 = ins.series('orders', 'aovDaily', 7);
+    final num aovNow = _mn('orders_week') == 0 ? 0 : _mn('week') / _mn('orders_week');
+    final num aovPrev = _mn('orders_prev') == 0 ? 0 : _mn('prev_week') / _mn('orders_prev');
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade200)),
@@ -1120,24 +1006,24 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹1,002', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(aovNow), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 7.8% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${aovNow >= aovPrev ? '↑' : '↓'} ${_growth(aovNow, aovPrev).replaceAll('+', '').replaceAll('-', '')} vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: aovNow >= aovPrev ? const Color(0xFF10B981) : const Color(0xFFEF4444))),
           const SizedBox(height: 16),
           SizedBox(
             height: 130,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 200, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(aov7, 100) / 5, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
-                minY: 500,
-                maxY: 1500,
+                minY: 0,
+                maxY: top(aov7, 100),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 820), FlSpot(1, 910), FlSpot(2, 880), FlSpot(3, 1100), FlSpot(4, 980), FlSpot(5, 1200), FlSpot(6, 1002)],
+                    spots: [for (final e in aov7.asMap().entries) FlSpot(e.key.toDouble(), e.value)],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -1184,10 +1070,10 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('Total Returns', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
-                      SizedBox(height: 2),
-                      Text('112 (↓2.4%)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFFEF4444))),
+                    children: [
+                      const Text('Total Returns', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text('${fmtInt(ins.n('orders', 'returns'))} (${_mn('returns_week') <= _mn('returns_prev') ? '↓' : '↑'}${_growth(_mn('returns_week'), _mn('returns_prev')).replaceAll('+', '').replaceAll('-', '')})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFFEF4444))),
                     ],
                   ),
                 ),
@@ -1199,10 +1085,10 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text('Refund Amount', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
-                      SizedBox(height: 2),
-                      Text('₹1,24,600', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                    children: [
+                      const Text('Refund Amount', style: TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text(fmtInr(ins.n('orders', 'refunded')), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                     ],
                   ),
                 ),
@@ -1214,16 +1100,16 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             height: 130,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 50, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_mSeries('refundDaily'), 100) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 200,
+                maxY: top(_mSeries('refundDaily'), 100),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 110), FlSpot(1, 140), FlSpot(2, 90), FlSpot(3, 130), FlSpot(4, 100), FlSpot(5, 150), FlSpot(6, 112)],
+                    spots: [for (final e in _mSeries('refundDaily').asMap().entries) FlSpot(e.key.toDouble(), e.value)],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF8B5CF6),
@@ -1249,11 +1135,15 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
   // 8. RECENT ORDERS
   Widget _buildRecentOrdersSection() {
     final orders = [
-      {'id': '#ORD-8742', 'user': 'Rahul Verma', 'amount': '₹2,499', 'status': 'Delivered', 'date': 'May 26, 2025', 'color': const Color(0xFF10B981)},
-      {'id': '#ORD-8741', 'user': 'Priya Patel', 'amount': '₹1,899', 'status': 'Shipped', 'date': 'May 26, 2025', 'color': const Color(0xFF3B82F6)},
-      {'id': '#ORD-8740', 'user': 'Amit Sharma', 'amount': '₹899', 'status': 'Processing', 'date': 'May 25, 2025', 'color': const Color(0xFF8B5CF6)},
-      {'id': '#ORD-8739', 'user': 'Neha Singh', 'amount': '₹450', 'status': 'Pending', 'date': 'May 25, 2025', 'color': const Color(0xFFF97316)},
-      {'id': '#ORD-8738', 'user': 'Karan Mehra', 'amount': '₹1,299', 'status': 'Cancelled', 'date': 'May 25, 2025', 'color': const Color(0xFFEF4444)},
+      for (final o in _ml('recent'))
+        {
+          'id': '#${o['id']}',
+          'user': (o['name'] ?? 'Customer').toString(),
+          'amount': fmtInr((o['amount'] as num?) ?? 0),
+          'status': _orderStatusLabel((o['status'] ?? '').toString()),
+          'date': shortDate(o['at']?.toString()),
+          'color': _orderStatusColor((o['status'] ?? '').toString()),
+        },
     ];
 
     return Container(
@@ -1270,6 +1160,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
             ],
           ),
           const SizedBox(height: 14),
+          if (orders.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Center(child: Text('No orders yet', style: TextStyle(color: Color(0xFF94A3B8)))),
+            ),
           ...orders.map((o) {
             final Color color = o['color'] as Color;
             return Container(
@@ -1311,11 +1206,11 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
   // 8. MARKETPLACE SUMMARY
   Widget _buildMarketplaceSummarySection() {
     final summaries = [
-      {'title': 'Total Sales', 'val': '₹24,58,300', 'growth': '+21.7%', 'color': const Color(0xFF10B981), 'icon': Icons.monetization_on_rounded},
-      {'title': 'Total Orders', 'val': '2,456', 'growth': '+18.2%', 'color': const Color(0xFF8B5CF6), 'icon': Icons.shopping_bag_rounded},
-      {'title': 'Total Products', 'val': '1,243', 'growth': '+12.4%', 'color': const Color(0xFFF97316), 'icon': Icons.inventory_2_rounded},
-      {'title': 'Total Vendors', 'val': '128', 'growth': '+16.3%', 'color': const Color(0xFF06B6D4), 'icon': Icons.store_rounded},
-      {'title': 'Average Order Value', 'val': '₹1,002', 'growth': '+7.8%', 'color': const Color(0xFF3B82F6), 'icon': Icons.credit_card_rounded},
+      {'title': 'Total Sales', 'val': fmtInr(_totalSalesRevenue), 'growth': _growth(_mn('week'), _mn('prev_week')), 'color': const Color(0xFF10B981), 'icon': Icons.monetization_on_rounded},
+      {'title': 'Total Orders', 'val': fmtInt(_totalOrdersCount), 'growth': _growth(_mn('orders_week'), _mn('orders_prev')), 'color': const Color(0xFF8B5CF6), 'icon': Icons.shopping_bag_rounded},
+      {'title': 'Total Products', 'val': fmtInt(_totalProductsCount), 'growth': '${fmtInt(st.n('catalog', 'low_stock'))} low', 'color': const Color(0xFFF97316), 'icon': Icons.inventory_2_rounded},
+      {'title': 'Total Vendors', 'val': fmtInt(st.n('users', 'vendors')), 'growth': '${_ml('vendors').length} selling', 'color': const Color(0xFF06B6D4), 'icon': Icons.store_rounded},
+      {'title': 'Average Order Value', 'val': fmtInr(_averageOrderValue), 'growth': _growth(_mn('orders_week') == 0 ? 0 : _mn('week') / _mn('orders_week'), _mn('orders_prev') == 0 ? 0 : _mn('prev_week') / _mn('orders_prev')), 'color': const Color(0xFF3B82F6), 'icon': Icons.credit_card_rounded},
     ];
 
     return Container(

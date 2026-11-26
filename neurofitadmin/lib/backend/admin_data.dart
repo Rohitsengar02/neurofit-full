@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:socket_io_client/socket_io_client.dart' as io;
+
+import '../constants/api_constants.dart';
 
 import 'live_backend.dart';
 
@@ -368,6 +371,34 @@ class AdminInsights extends ChangeNotifier {
 }
 
 /// Mixin for analytics screens: rebuild when stats or insights arrive.
+/// One socket for the whole admin panel. When the server says orders, users,
+/// products or trainers changed, the shared stats refresh (debounced), so every
+/// open analytics screen updates without polling.
+class AdminLive {
+  static io.Socket? _s;
+  static Timer? _t;
+
+  static void start() {
+    if (_s != null || ApiConstants.demoMode) return;
+    _s = io.io(
+      ApiConstants.socketUrl,
+      io.OptionBuilder().setTransports(['websocket']).setAuth({'token': AdminSession.accessToken ?? ''}).enableReconnection().build(),
+    );
+    _s!.onConnect((_) => _s!.emit('join_admin_room'));
+    for (final ev in const ['order:created', 'order:updated', 'order_status_updated', 'user:updated', 'products_updated', 'trainers_updated', 'subscriptions_updated', 'reports_updated', 'posts_updated']) {
+      _s!.on(ev, (_) => _refresh());
+    }
+  }
+
+  static void _refresh() {
+    _t?.cancel();
+    _t = Timer(const Duration(seconds: 3), () {
+      AdminStats.I.load(force: true);
+      AdminInsights.I.load(force: true);
+    });
+  }
+}
+
 mixin LiveStats<T extends StatefulWidget> on State<T> {
   void _liveChanged() { if (mounted) setState(() {}); }
 
@@ -378,6 +409,7 @@ mixin LiveStats<T extends StatefulWidget> on State<T> {
     AdminInsights.I.addListener(_liveChanged);
     AdminStats.I.load();
     AdminInsights.I.load();
+    AdminLive.start();
   }
 
   @override
