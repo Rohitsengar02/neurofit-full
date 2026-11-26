@@ -7,6 +7,7 @@ import 'screens/admin_dashboard_screen.dart';
 import 'package:http/http.dart' as http;
 import 'constants/api_constants.dart';
 import 'demo/demo_backend.dart';
+import 'backend/live_backend.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,16 +24,22 @@ void main() {
     final realClient = http.Client();
     http.runWithClient(() => runApp(const NeuroFitAdminApp()), () => DemoBackendClient(realClient));
   } else {
-    runApp(const NeuroFitAdminApp());
+    // Every call goes to the NeuroFit API with the admin's token.
+    final realClient = http.Client();
+    http.runWithClient(() => runApp(const NeuroFitAdminApp()), () => LiveBackendClient(realClient));
   }
 }
+
+final GlobalKey<NavigatorState> adminNavKey = GlobalKey<NavigatorState>();
 
 class NeuroFitAdminApp extends StatelessWidget {
   const NeuroFitAdminApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    AdminSession.onSignedOut = () => adminNavKey.currentState?.pushNamedAndRemoveUntil('/login', (_) => false);
     return MaterialApp(
+      navigatorKey: adminNavKey,
       title: 'NeuroFit Admin',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

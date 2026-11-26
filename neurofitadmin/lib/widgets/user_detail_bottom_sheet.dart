@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import 'net_or_asset_image.dart';
 
 void showUserDetailModal(BuildContext context, Map<String, dynamic> user) {
   showModalBottomSheet(
@@ -24,11 +27,65 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
   late String _userStatus;
   late bool _isVip;
 
+  Map<String, dynamic> _ov = {};
+  String get _uid => (widget.user['uid'] ?? widget.user['id'] ?? '').toString();
+
+  static String _statusLabel(String s) {
+    switch (s.toLowerCase()) {
+      case 'suspended':
+      case 'banned':
+        return 'Suspended';
+      case 'inactive':
+        return 'Inactive';
+      case 'pending':
+      case 'pending verification':
+        return 'Pending Verification';
+      default:
+        return 'Active';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _userStatus = widget.user['status'] ?? 'Active';
-    _isVip = widget.user['badge'] == 'VIP' || (widget.user['plan'] ?? '').toString().contains('VIP');
+    _userStatus = _statusLabel((widget.user['status'] ?? 'Active').toString());
+    _isVip = widget.user['isPremium'] == true || widget.user['badge'] == 'VIP' || (widget.user['plan'] ?? '').toString().contains('VIP');
+    _loadOverview();
+  }
+
+  Future<void> _loadOverview() async {
+    if (_uid.isEmpty) return;
+    try {
+      final j = await Api.get('/admin/users/$_uid/overview');
+      if (!mounted) return;
+      setState(() {
+        _ov = Map<String, dynamic>.from(j['data'] as Map);
+        final u = Map<String, dynamic>.from(_ov['user'] as Map);
+        _userStatus = _statusLabel((u['status'] ?? 'active').toString());
+        _isVip = u['isPremium'] == true;
+      });
+    } catch (_) {}
+  }
+
+  Future<bool> _act(Future<void> Function() fn, String okMsg, Color color) async {
+    try {
+      await fn();
+      _showActionSnackbar(okMsg, color);
+      return true;
+    } catch (e) {
+      _showActionSnackbar('Could not update: $e', const Color(0xFFEF4444));
+      return false;
+    }
+  }
+
+  Map<String, dynamic> get _ou => _ov['user'] is Map ? Map<String, dynamic>.from(_ov['user']) : Map<String, dynamic>.from(widget.user);
+  Map<String, dynamic> get _q => _ou['questionnaireData'] is Map ? Map<String, dynamic>.from(_ou['questionnaireData']) : {};
+  String _qv(List<String> keys) {
+    for (final k in keys) {
+      final v = _q[k] ?? _ou[k];
+      if (v != null && v.toString().trim().isNotEmpty) return v.toString();
+    }
+    return '';
   }
 
   void _showActionSnackbar(String msg, Color color) {
@@ -81,7 +138,8 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
-              _showActionSnackbar('Warning notification sent to ${widget.user['name']} via Push & Email!', const Color(0xFFF59E0B));
+              _act(() => Api.send('POST', '/notifications', {'userId': _uid, 'title': 'Account warning', 'body': textController.text.trim(), 'type': 'warning'}),
+                  'Warning sent to ${widget.user['name']} in the app.', const Color(0xFFF59E0B));
             },
             child: const Text('Send Warning', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
@@ -112,10 +170,10 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
-              setState(() {
-                _userStatus = 'Suspended';
+              _act(() => Api.send('PATCH', '/users/$_uid/status', {'status': 'suspended'}),
+                  '${widget.user['name']} has been suspended from the platform.', const Color(0xFFEF4444)).then((ok) {
+                if (ok && mounted) setState(() => _userStatus = 'Suspended');
               });
-              _showActionSnackbar('${widget.user['name']} has been suspended from the platform.', const Color(0xFFEF4444));
             },
             child: const Text('Confirm Suspend', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
@@ -154,8 +212,11 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
               onPressed: () {
                 Navigator.pop(ctx);
-                setState(() => _userStatus = selected);
-                _showActionSnackbar('User status successfully updated to "$selected"!', const Color(0xFF10B981));
+                const map = {'Active': 'active', 'Pending Verification': 'pending', 'Inactive': 'inactive', 'Suspended': 'suspended'};
+                _act(() => Api.send('PATCH', '/users/$_uid/status', {'status': map[selected] ?? 'active'}),
+                    'User status successfully updated to "$selected"!', const Color(0xFF10B981)).then((ok) {
+                  if (ok && mounted) setState(() => _userStatus = selected);
+                });
               },
               child: const Text('Save Status', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
             ),
@@ -167,11 +228,11 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
 
   @override
   Widget build(BuildContext context) {
-    final u = widget.user;
-    final name = u['name'] ?? 'User Profile';
-    final email = u['email'] ?? 'user@neurofit.com';
-    final phone = u['phone'] ?? '+91 98765 43210';
-    final img = u['img'] ?? 'assets/images/trainers_hero_banner.jpg';
+    final u = {...widget.user, ..._ou};
+    final name = (u['name'] ?? 'User Profile').toString();
+    final email = (u['email'] ?? '').toString();
+    final phone = (u['phone'] ?? '').toString().isEmpty ? 'No phone added' : u['phone'].toString();
+    final img = ((u['photoUrl'] ?? '').toString().isNotEmpty ? u['photoUrl'] : (u['img'] ?? 'assets/images/trainers_hero_banner.jpg')).toString();
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.88,
@@ -203,7 +264,7 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
                       ),
                       padding: const EdgeInsets.all(2),
                       child: ClipOval(
-                        child: Image.asset(img, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person, size: 30)),
+                        child: NetOrAssetImage(img, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person, size: 30)),
                       ),
                     ),
                     Positioned(
@@ -355,16 +416,31 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
       children: [
         const Text('Profile & Demographics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
         const SizedBox(height: 12),
-        _buildInfoGrid([
-          {'label': 'Gender / Age', 'val': 'Male, 28 Yrs', 'icon': Icons.person_rounded},
-          {'label': 'Height / Weight', 'val': '178 cm • 76 kg', 'icon': Icons.accessibility_new_rounded},
-          {'label': 'BMI Status', 'val': '24.0 (Normal)', 'icon': Icons.monitor_weight_outlined},
-          {'label': 'Primary Goal', 'val': 'Weight Loss & Tone', 'icon': Icons.flag_circle_rounded},
-          {'label': 'Daily Calorie Goal', 'val': '2,200 kcal', 'icon': Icons.local_fire_department_rounded},
-          {'label': 'Assigned Trainer', 'val': u['trainer'] ?? 'Amit Sharma', 'icon': Icons.sports_gymnastics_rounded},
-          {'label': 'Location', 'val': 'Mumbai, Maharashtra', 'icon': Icons.location_on_outlined},
-          {'label': 'Platform / OS', 'val': 'iPhone 15 • iOS 18.2', 'icon': Icons.phone_iphone_rounded},
-        ]),
+        _buildInfoGrid(() {
+          final gender = _qv(['gender']);
+          final age = _qv(['age']);
+          final h = double.tryParse(_qv(['height', 'heightCm']).replaceAll(RegExp(r'[^0-9.]'), ''));
+          final w = double.tryParse(_qv(['weight', 'currentWeight', 'weightKg']).replaceAll(RegExp(r'[^0-9.]'), ''));
+          String bmi = 'Not set';
+          if (h != null && w != null && h > 0) {
+            final b = w / ((h / 100) * (h / 100));
+            bmi = '${b.toStringAsFixed(1)} (${b < 18.5 ? 'Underweight' : b < 25 ? 'Normal' : b < 30 ? 'Overweight' : 'Obese'})';
+          }
+          final t = _ov['targets'] is Map ? _ov['targets'] as Map : const {};
+          final sub = _ov['subscription'] is Map ? _ov['subscription'] as Map : null;
+          final addr = (u['addresses'] is List && (u['addresses'] as List).isNotEmpty) ? (u['addresses'] as List).first as Map : const {};
+          final loc = [addr['city'], addr['state']].where((x) => x != null && x.toString().isNotEmpty).join(', ');
+          return [
+            {'label': 'Gender / Age', 'val': [if (gender.isNotEmpty) gender, if (age.isNotEmpty) '$age Yrs'].join(', ').ifEmpty('Not set'), 'icon': Icons.person_rounded},
+            {'label': 'Height / Weight', 'val': [if (h != null) '${h.toStringAsFixed(0)} cm', if (w != null) '${w.toStringAsFixed(0)} kg'].join(' • ').ifEmpty('Not set'), 'icon': Icons.accessibility_new_rounded},
+            {'label': 'BMI Status', 'val': bmi, 'icon': Icons.monitor_weight_outlined},
+            {'label': 'Primary Goal', 'val': _qv(['goal', 'primaryGoal', 'fitnessGoal']).ifEmpty('Not set'), 'icon': Icons.flag_circle_rounded},
+            {'label': 'Daily Calorie Goal', 'val': t['targetCalories'] == null ? '-' : '${fmtInt(t['targetCalories'] as num)} kcal', 'icon': Icons.local_fire_department_rounded},
+            {'label': 'Assigned Trainer', 'val': (sub?['trainerName'] ?? 'None').toString(), 'icon': Icons.sports_gymnastics_rounded},
+            {'label': 'Location', 'val': loc.ifEmpty('Not set'), 'icon': Icons.location_on_outlined},
+            {'label': 'Sign-in Method', 'val': (u['authProvider'] ?? 'email').toString() == 'google' ? 'Google' : 'Email & password', 'icon': Icons.phone_iphone_rounded},
+          ];
+        }()),
         const SizedBox(height: 16),
         const Text('Account Metadata', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
         const SizedBox(height: 10),
@@ -373,11 +449,11 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
           decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
           child: Column(
             children: [
-              _buildMetaRow('User ID', 'USR-8947219'),
+              _buildMetaRow('User ID', _uid),
               const Divider(height: 14, thickness: 0.6),
-              _buildMetaRow('Acquisition Source', u['source'] ?? 'Mobile App (Organic)'),
+              _buildMetaRow('Acquisition Source', (u['authProvider'] ?? '') == 'google' ? 'Google sign-up' : 'Email sign-up'),
               const Divider(height: 14, thickness: 0.6),
-              _buildMetaRow('Registration Date', u['joined'] ?? 'May 20, 2025'),
+              _buildMetaRow('Registration Date', shortDate(u['createdAt']?.toString()).ifEmpty((u['joined'] ?? '').toString())),
               const Divider(height: 14, thickness: 0.6),
               _buildMetaRow('Current Status', _userStatus, color: _userStatus == 'Suspended' ? const Color(0xFFEF4444) : const Color(0xFF10B981)),
             ],
@@ -389,6 +465,9 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
 
   // TAB 2: SUBSCRIPTION & PAYMENTS
   Widget _buildSubscriptionTab(Map<String, dynamic> u) {
+    final sub = _ov['subscription'] is Map ? Map<String, dynamic>.from(_ov['subscription']) : null;
+    final active = sub != null && sub['status'] != 'cancelled' && (DateTime.tryParse(sub['until'] ?? '')?.isAfter(DateTime.now()) ?? false);
+    final months = (sub?['months'] as num?)?.toInt() ?? 1;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -412,15 +491,15 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(color: const Color(0xFF65D300), borderRadius: BorderRadius.circular(6)),
-                    child: const Text('ACTIVE PLAN', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                    child: Text(active ? 'ACTIVE PLAN' : (_isVip ? 'VIP MEMBER' : 'FREE PLAN'), style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                   ),
-                  const Text('₹12,499 / Year', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white)),
+                  Text(sub == null ? '₹0' : '${fmtInr(sub['amount'] as num? ?? 0)} / ${months == 12 ? 'Year' : months == 1 ? 'Month' : '$months Months'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white)),
                 ],
               ),
               const SizedBox(height: 10),
-              Text(u['plan'] ?? 'Pro Elite Membership', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
+              Text(sub == null ? 'No coaching plan' : '${sub['trainerName'] ?? 'Coach'} · ${sub['planName'] ?? ''}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
               const SizedBox(height: 4),
-              const Text('Renews automatically on Nov 26, 2025 • Auto-Debit via UPI', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+              Text(sub == null ? 'The user has not subscribed to a coach yet' : '${active ? 'Active until' : 'Ended on'} ${shortDate(sub['until']?.toString())} • Payment ${sub['paymentStatus'] ?? 'pending'}', style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
             ],
           ),
         ),
@@ -433,9 +512,11 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
           ],
         ),
         const SizedBox(height: 10),
-        _buildInvoiceItem('#INV-9821', 'Annual Subscription Renewal', '₹12,499', 'Paid', 'May 20, 2025'),
-        _buildInvoiceItem('#INV-8734', 'Personal Mentorship Add-on', '₹3,999', 'Paid', 'Apr 15, 2025'),
-        _buildInvoiceItem('#INV-7612', 'Custom Nutrition Plan (12 Wk)', '₹1,499', 'Paid', 'Mar 10, 2025'),
+        if (sub != null) _buildInvoiceItem('#${sub['id']}', '${sub['planName'] ?? 'Coaching'} plan with ${sub['trainerName'] ?? 'coach'}', fmtInr(sub['amount'] as num? ?? 0), (sub['paymentStatus'] ?? 'pending').toString().toUpperCase() == 'PAID' ? 'Paid' : 'Pending', shortDate(sub['createdAt']?.toString())),
+        for (final o in (_ov['orders'] as List? ?? const []).take(3))
+          _buildInvoiceItem('#${o['orderId']}', 'Store order (${(o['items'] as List?)?.length ?? 0} items)', fmtInr(num.tryParse('${o['totalAmount'] ?? 0}') ?? 0), (o['paymentStatus'] ?? 'Pending').toString(), shortDate(o['createdAt']?.toString())),
+        if (sub == null && (_ov['orders'] as List? ?? const []).isEmpty)
+          const Padding(padding: EdgeInsets.all(8), child: Text('No payments yet', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
       ],
     );
   }
@@ -453,10 +534,10 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
                 decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(14)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text('Total Orders', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF047857))),
-                    SizedBox(height: 2),
-                    Text('8 Orders', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF065F46))),
+                  children: [
+                    const Text('Total Orders', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF047857))),
+                    const SizedBox(height: 2),
+                    Text('${_ov['orderCount'] ?? 0} Orders', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF065F46))),
                   ],
                 ),
               ),
@@ -468,10 +549,10 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
                 decoration: BoxDecoration(color: const Color(0xFFF5F3FF), borderRadius: BorderRadius.circular(14)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text('Marketplace Spend', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF6D28D9))),
-                    SizedBox(height: 2),
-                    Text('₹14,392', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF5B21B6))),
+                  children: [
+                    const Text('Marketplace Spend', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF6D28D9))),
+                    const SizedBox(height: 2),
+                    Text(fmtInr(_ov['spend'] as num? ?? 0), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF5B21B6))),
                   ],
                 ),
               ),
@@ -481,33 +562,50 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
         const SizedBox(height: 16),
         const Text('Recent Store Orders', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
         const SizedBox(height: 10),
-        _buildOrderItem('#ORD-8742', 'Whey Protein Isolate 1kg (Chocolate)', '₹2,499', 'Delivered', 'May 24, 2025', 'assets/images/nutrifit_whey_protein.jpg'),
-        _buildOrderItem('#ORD-8620', 'Creatine Monohydrate 250g + Shaker', '₹1,899', 'Delivered', 'May 10, 2025', 'assets/images/product_1.png'),
-        _buildOrderItem('#ORD-8410', 'Resistance Band Set (5 Levels)', '₹799', 'Delivered', 'Apr 28, 2025', 'assets/images/product_2.png'),
+        for (final o in (_ov['orders'] as List? ?? const []))
+          () {
+            final items = (o['items'] as List?) ?? const [];
+            final first = items.isNotEmpty && items.first is Map ? items.first as Map : const {};
+            final title = items.isEmpty ? 'Order' : '${first['name'] ?? first['title'] ?? 'Item'}${items.length > 1 ? ' + ${items.length - 1} more' : ''}';
+            final img = (first['imageUrl'] ?? first['image'] ?? first['mainImageUrl'] ?? 'assets/images/product_1.png').toString();
+            return _buildOrderItem('#${o['orderId']}', title, fmtInr(num.tryParse('${o['totalAmount'] ?? 0}') ?? 0), (o['orderStatus'] ?? '').toString(), shortDate(o['createdAt']?.toString()), img);
+          }(),
+        if ((_ov['orders'] as List? ?? const []).isEmpty)
+          const Padding(padding: EdgeInsets.all(8), child: Text('No orders yet', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
       ],
     );
   }
 
   // TAB 4: FITNESS ACTIVITY
   Widget _buildFitnessActivityTab(Map<String, dynamic> u) {
+    final w = _ov['workouts'] is Map ? Map<String, dynamic>.from(_ov['workouts']) : <String, dynamic>{};
+    final mins = (w['minutes'] as num?) ?? 0;
+    const colors = [Color(0xFF10B981), Color(0xFF8B5CF6), Color(0xFF3B82F6), Color(0xFFF97316), Color(0xFFEF4444)];
+    final recent = (w['recent'] as List?) ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildStatBox('Workouts', '78', '+14.2%', Icons.fitness_center_rounded, const Color(0xFF10B981)),
-            _buildStatBox('Streak', '24d', 'Active', Icons.local_fire_department_rounded, const Color(0xFFF97316)),
-            _buildStatBox('Calories', '48.5K', 'Burned', Icons.bolt_rounded, const Color(0xFF8B5CF6)),
-            _buildStatBox('Time', '64.5h', 'Total', Icons.timer_outlined, const Color(0xFF3B82F6)),
+            _buildStatBox('Workouts', '${w['completed'] ?? 0}', '', Icons.fitness_center_rounded, const Color(0xFF10B981)),
+            _buildStatBox('Streak', '${w['streak'] ?? 0}d', 'Active', Icons.local_fire_department_rounded, const Color(0xFFF97316)),
+            _buildStatBox('Calories', fmtShort(w['calories'] as num? ?? 0), 'Burned', Icons.bolt_rounded, const Color(0xFF8B5CF6)),
+            _buildStatBox('Time', mins >= 60 ? '${(mins / 60).toStringAsFixed(1)}h' : '${mins}m', 'Total', Icons.timer_outlined, const Color(0xFF3B82F6)),
           ],
         ),
         const SizedBox(height: 16),
         const Text('Recent Logged Sessions', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
         const SizedBox(height: 10),
-        _buildActivityItem('Full Body Strength & Core', '48 mins • 420 kcal burned', 'Today, 7:30 AM', const Color(0xFF10B981)),
-        _buildActivityItem('High Intensity HIIT Blast', '35 mins • 380 kcal burned', 'Yesterday, 8:00 AM', const Color(0xFF8B5CF6)),
-        _buildActivityItem('Yoga & Flexibility Routine', '45 mins • 210 kcal burned', 'May 24, 6:45 AM', const Color(0xFF3B82F6)),
+        for (var i = 0; i < recent.length; i++)
+          _buildActivityItem(
+            '${recent[i]['workoutTitle'] ?? 'Workout'} · Day ${recent[i]['dayNumber'] ?? 1}',
+            '${(((recent[i]['totalDurationSeconds'] as num?) ?? 0) / 60).round()} mins • ${recent[i]['dayCompleted'] == true ? 'completed' : 'in progress'}',
+            timeAgo(recent[i]['at']?.toString()),
+            colors[i % colors.length],
+          ),
+        if (recent.isEmpty)
+          const Padding(padding: EdgeInsets.all(8), child: Text('No workouts logged yet', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
       ],
     );
   }
@@ -583,7 +681,7 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.asset(img, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag)),
+            child: NetOrAssetImage(img, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.shopping_bag)),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -660,8 +758,11 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
                   label: _isVip ? 'Remove VIP' : '👑 Make VIP',
                   color: const Color(0xFFF59E0B),
                   onTap: () {
-                    setState(() => _isVip = !_isVip);
-                    _showActionSnackbar(_isVip ? '$name promoted to VIP status!' : 'VIP status removed from $name.', const Color(0xFFF59E0B));
+                    final next = !_isVip;
+                    _act(() => Api.send('PUT', '/users/$_uid', {'isPremium': next}),
+                        next ? '$name promoted to VIP status!' : 'VIP status removed from $name.', const Color(0xFFF59E0B)).then((ok) {
+                      if (ok && mounted) setState(() => _isVip = next);
+                    });
                   },
                 ),
               ),
@@ -716,4 +817,9 @@ class _UserDetailBottomSheetState extends State<UserDetailBottomSheet> with Sing
       ),
     );
   }
+}
+
+
+extension _IfEmpty on String {
+  String ifEmpty(String other) => trim().isEmpty ? other : this;
 }

@@ -85,7 +85,7 @@ router.get('/stats', requireAdmin, cached(['users', 'orders', 'posts', 'trainers
          FROM user_records WHERE collection = 'nutrition_day'`),
   ]);
 
-  const [signups, active, revenue, orderCount, workoutsDone, statusRows, topProducts, topWorkouts, goals] = await Promise.all([
+  const [signups, active, revenue, orderCount, workoutsDone, statusRows, topProducts, topWorkouts, goals, gender, ages, cities, recent, steps, calories] = await Promise.all([
     series(`SELECT date_trunc('day', created_at) AS day, count(*) AS v FROM users WHERE created_at > ${days(30)} GROUP BY 1`),
     series(`SELECT date_trunc('day', last_active_at) AS day, count(*) AS v FROM users WHERE last_active_at > ${days(30)} GROUP BY 1`),
     series(`SELECT date_trunc('day', created_at) AS day, COALESCE(sum((data->>'totalAmount')::numeric), 0) AS v FROM docs WHERE collection = 'orders' AND created_at > ${days(30)} AND data->>'totalAmount' ~ '^[0-9.]+$' AND data->>'orderStatus' NOT IN ('Cancelled','Returned') GROUP BY 1`),
@@ -101,6 +101,22 @@ router.get('/stats', requireAdmin, cached(['users', 'orders', 'posts', 'trainers
            FROM user_records WHERE collection = 'workout_progress' GROUP BY 1 ORDER BY athletes DESC LIMIT 10`),
     query(`SELECT COALESCE(questionnaire->>'goal', questionnaire->>'primaryGoal', questionnaire->>'fitnessGoal', 'Not set') AS goal, count(*)::int AS n
            FROM users WHERE role NOT IN ('admin','superadmin') GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
+    query(`SELECT CASE WHEN lower(COALESCE(questionnaire->>'gender', profile->>'gender', '')) LIKE 'f%' THEN 'Female'
+                       WHEN lower(COALESCE(questionnaire->>'gender', profile->>'gender', '')) LIKE 'm%' THEN 'Male'
+                       WHEN COALESCE(questionnaire->>'gender', profile->>'gender', '') = '' THEN 'Not set' ELSE 'Other' END AS label, count(*)::int AS n
+           FROM users WHERE role NOT IN ('admin','superadmin') GROUP BY 1 ORDER BY 2 DESC`),
+    query(`SELECT CASE WHEN a < 18 THEN 'Under 18' WHEN a < 25 THEN '18-24' WHEN a < 35 THEN '25-34' WHEN a < 45 THEN '35-44' WHEN a < 55 THEN '45-54' ELSE '55+' END AS label, count(*)::int AS n
+           FROM (SELECT NULLIF(regexp_replace(COALESCE(questionnaire->>'age', profile->>'age', ''), '[^0-9]', '', 'g'), '')::int AS a FROM users WHERE role NOT IN ('admin','superadmin')) x
+           WHERE a IS NOT NULL GROUP BY 1 ORDER BY 2 DESC`),
+    query(`SELECT initcap(COALESCE(NULLIF(addresses->0->>'city', ''), NULLIF(profile->>'city', ''), 'Unknown')) AS label, count(*)::int AS n
+           FROM users WHERE role NOT IN ('admin','superadmin') GROUP BY 1 ORDER BY (initcap(COALESCE(NULLIF(addresses->0->>'city', ''), NULLIF(profile->>'city', ''), 'Unknown')) = 'Unknown'), 2 DESC LIMIT 5`),
+    query(`(SELECT 'user' AS kind, name AS title, email AS detail, created_at AS at, id FROM users WHERE role NOT IN ('admin','superadmin') ORDER BY created_at DESC LIMIT 6)
+           UNION ALL (SELECT 'order', COALESCE(data->>'customerName', 'Customer'), id || ' · ₹' || COALESCE(data->>'totalAmount', '0'), created_at, id FROM docs WHERE collection = 'orders' ORDER BY created_at DESC LIMIT 6)
+           UNION ALL (SELECT 'trainer', COALESCE(data->>'name', 'Coach'), COALESCE(data->>'status', 'pending'), created_at, id FROM docs WHERE collection = 'trainers' ORDER BY created_at DESC LIMIT 4)
+           UNION ALL (SELECT 'subscription', COALESCE(data->>'userName', 'Member'), COALESCE(data->>'trainerName', '') || ' · ' || COALESCE(data->>'planName', ''), created_at, id FROM docs WHERE collection = 'trainer_subscriptions' ORDER BY created_at DESC LIMIT 4)
+           ORDER BY at DESC LIMIT 12`),
+    one(`SELECT COALESCE(sum(NULLIF(regexp_replace(COALESCE(data->>'steps', '0'), '[^0-9]', '', 'g'), '')::bigint), 0)::bigint AS total FROM user_records WHERE collection = 'steps_day'`),
+    one(`SELECT COALESCE(sum((data->>'caloriesBurned')::numeric), 0)::bigint AS total FROM user_records WHERE collection = 'workout_progress' AND data->>'caloriesBurned' ~ '^[0-9.]+$'`),
   ]);
 
   const revenueNum = Number(orders.revenue);
@@ -118,8 +134,48 @@ router.get('/stats', requireAdmin, cached(['users', 'orders', 'posts', 'trainers
       topProducts: topProducts.rows.map((r) => ({ ...r, revenue: Number(r.revenue) })),
       topWorkouts: topWorkouts.rows,
       goals: goals.rows,
+      demographics: { gender: gender.rows, ages: ages.rows, cities: cities.rows },
+      recentActivity: recent.rows,
+      activity: { steps: Number(steps.total), caloriesBurned: Number(calories.total) },
     },
   });
+});
+
+// Everything about one user, for the user detail sheet.
+router.get('/users/:uid/overview', requireAdmin, async (req, res) => {
+  const uid = req.params.uid;
+  const u = await one('SELECT * FROM users WHERE id = $1', [uid]);
+  if (!u) return res.status(404).json({ success: false, message: 'User not found' });
+  const [orders, ordersAgg, progress, progressAgg, sub, nutrition, streakDays] = await Promise.all([
+    query(`SELECT * FROM docs WHERE collection = 'orders' AND owner_id = $1 ORDER BY created_at DESC LIMIT 5`, [uid]),
+    one(`SELECT count(*)::int AS n, COALESCE(sum((data->>'totalAmount')::numeric) FILTER (WHERE data->>'totalAmount' ~ '^[0-9.]+$'), 0) AS spend FROM docs WHERE collection = 'orders' AND owner_id = $1`, [uid]),
+    query(`SELECT data, client_updated_at FROM user_records WHERE user_id = $1 AND collection = 'workout_progress' ORDER BY client_updated_at DESC LIMIT 5`, [uid]),
+    one(`SELECT count(*) FILTER (WHERE data->>'dayCompleted' = 'true')::int AS completed, COALESCE(sum((data->>'totalDurationSeconds')::int), 0)::bigint AS seconds,
+           COALESCE(sum((data->>'caloriesBurned')::numeric) FILTER (WHERE data->>'caloriesBurned' ~ '^[0-9.]+$'), 0) AS kcal
+         FROM user_records WHERE user_id = $1 AND collection = 'workout_progress'`, [uid]),
+    one(`SELECT * FROM docs WHERE collection = 'trainer_subscriptions' AND owner_id = $1 ORDER BY created_at DESC LIMIT 1`, [uid]),
+    one(`SELECT data FROM user_records WHERE user_id = $1 AND collection = 'nutrition_day' ORDER BY id DESC LIMIT 1`, [uid]),
+    query(`SELECT DISTINCT date_trunc('day', client_updated_at)::date AS d FROM user_records WHERE user_id = $1 AND client_updated_at > now() - interval '120 days' ORDER BY d DESC`, [uid]),
+  ]);
+  let streak = 0;
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  for (const r of streakDays.rows) {
+    const d = new Date(r.d); d.setUTCHours(0, 0, 0, 0);
+    if (Math.round((today - d) / 864e5) === streak) streak++; else break;
+  }
+  const { userJson } = require('../lib/auth');
+  const docs = require('../lib/docs');
+  const { targetsFor } = require('./nutrition');
+  res.json({ success: true, data: {
+    user: userJson(u),
+    targets: targetsFor(u),
+    orders: orders.rows.map((r) => docs.toItem(r, 'orderId')),
+    orderCount: ordersAgg.n, spend: Number(ordersAgg.spend),
+    workouts: { completed: progressAgg.completed, minutes: Math.round(Number(progressAgg.seconds) / 60), calories: Number(progressAgg.kcal), streak,
+      recent: progress.rows.map((r) => ({ ...r.data, at: r.client_updated_at })) },
+    subscription: sub ? docs.toItem(sub) : null,
+    lastNutrition: nutrition ? nutrition.data : null,
+  } });
 });
 
 // Health of the moving parts, for the admin settings page.

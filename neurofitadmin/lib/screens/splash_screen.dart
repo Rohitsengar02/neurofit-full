@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'admin_login_screen.dart';
+import 'admin_dashboard_screen.dart';
+import 'package:http/http.dart' as http;
+import '../constants/api_constants.dart';
+import '../backend/live_backend.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -37,20 +41,32 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animController.forward();
 
-    Timer(const Duration(milliseconds: 2200), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, anim, secondaryAnim) =>
-                const AdminLoginScreen(),
-            transitionsBuilder: (context, anim, secondaryAnim, child) {
-              return FadeTransition(opacity: anim, child: child);
-            },
-            transitionDuration: const Duration(milliseconds: 600),
-          ),
-        );
-      }
-    });
+    _route();
+  }
+
+  /// Shows the splash while the API wakes up, then opens the dashboard if an
+  /// admin is already signed in on this device, otherwise the login screen.
+  Future<void> _route() async {
+    final started = DateTime.now();
+    var signedIn = false;
+    if (!ApiConstants.demoMode) {
+      await AdminSession.load();
+      await Api.warmUp(max: const Duration(seconds: 20));
+      signedIn = AdminSession.isSignedIn && await AdminSession.refresh(http.Client());
+    }
+    final wait = const Duration(milliseconds: 2200) - DateTime.now().difference(started);
+    if (wait > Duration.zero) await Future<void>.delayed(wait);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (context, anim, secondaryAnim) =>
+            signedIn ? const AdminDashboardScreen() : const AdminLoginScreen(),
+        transitionsBuilder: (context, anim, secondaryAnim, child) {
+          return FadeTransition(opacity: anim, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 600),
+      ),
+    );
   }
 
   @override

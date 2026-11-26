@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../backend/admin_data.dart';
 
 class AnalyticsOverviewView extends StatefulWidget {
   final String selectedDateRange;
@@ -19,6 +20,39 @@ class AnalyticsOverviewView extends StatefulWidget {
 
 class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
   bool _showPromoBanner = true;
+  AdminStats get st => AdminStats.I;
+
+  @override
+  void initState() {
+    super.initState();
+    AdminStats.I.addListener(_onStats);
+    AdminStats.I.load();
+  }
+
+  @override
+  void dispose() {
+    AdminStats.I.removeListener(_onStats);
+    super.dispose();
+  }
+
+  void _onStats() {
+    if (mounted) setState(() {});
+  }
+
+  static const _mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  List<String> _lastDays(int n, {bool withMonth = true}) => List.generate(n, (i) {
+        final d = DateTime.now().subtract(Duration(days: n - 1 - i));
+        return withMonth ? '${_mon[d.month - 1]} ${d.day}' : '${d.day}';
+      });
+
+  double _niceMax(Iterable<double> v, [double min = 5]) {
+    final m = v.fold<double>(0, (a, b) => b > a ? b : a);
+    final t = m < min ? min : m * 1.25;
+    final step = t <= 10 ? 2.0 : t <= 50 ? 10.0 : t <= 200 ? 50.0 : t <= 1000 ? 100.0 : (t / 5).roundToDouble();
+    return (t / step).ceil() * step;
+  }
+
+  String _pctOf(num part, num whole) => whole <= 0 ? '0%' : '${(part / whole * 100).toStringAsFixed(1)}%';
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -151,11 +185,11 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      _buildHeroStat('120K+', 'Active Users'),
+                      _buildHeroStat(fmtShort(st.n('users', 'mau')), 'Active Users'),
                       const SizedBox(width: 14),
-                      _buildHeroStat('4.8★', 'App Rating'),
+                      _buildHeroStat(fmtShort(st.n('fitness', 'completed')), 'Workouts Done'),
                       const SizedBox(width: 14),
-                      _buildHeroStat('23.4%', 'Growth'),
+                      _buildHeroStat('${st.growth('signups').toStringAsFixed(1)}%', 'Growth'),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -206,10 +240,10 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
   // 1. KPI OVERVIEW
   Widget _buildKpiOverviewSection() {
     final kpis = [
-      {'title': 'Total Users', 'value': '52,689', 'growth': '18.6% vs last 7 days', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Active Users', 'value': '23,456', 'growth': '12.4% vs last 7 days', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Orders', 'value': '1,243', 'growth': '14.3% vs last 7 days', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Revenue', 'value': '₹24,58,300', 'growth': '21.7% vs last 7 days', 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Users', 'value': fmtInt(st.n('users', 'total')), 'growth': st.growthLabel('signups'), 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Active Users', 'value': fmtInt(st.n('users', 'wau')), 'growth': st.growthLabel('active'), 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Orders', 'value': fmtInt(st.n('orders', 'total')), 'growth': st.growthLabel('orders'), 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Revenue', 'value': fmtInr(st.n('orders', 'revenue')), 'growth': st.growthLabel('revenue'), 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return Column(
@@ -289,6 +323,9 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
 
   // 2. USER GROWTH
   Widget _buildUserGrowthSection() {
+    final newU = st.series('signups', 7);
+    final actU = st.series('active', 7);
+    final maxY = _niceMax([...newU, ...actU]);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade200), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 3))]),
@@ -315,13 +352,13 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
             height: 180,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: maxY / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 28,
-                      interval: 100,
+                      interval: maxY / 4,
                       getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)),
                     ),
                   ),
@@ -330,7 +367,7 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = _lastDays(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -346,10 +383,10 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 450,
+                maxY: maxY,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 160), FlSpot(1, 280), FlSpot(2, 220), FlSpot(3, 310), FlSpot(4, 210), FlSpot(5, 270), FlSpot(6, 340)],
+                    spots: [for (var i = 0; i < newU.length; i++) FlSpot(i.toDouble(), newU[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -357,7 +394,7 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                     dotData: const FlDotData(show: true),
                   ),
                   LineChartBarData(
-                    spots: const [FlSpot(0, 70), FlSpot(1, 120), FlSpot(2, 90), FlSpot(3, 130), FlSpot(4, 170), FlSpot(5, 150), FlSpot(6, 190)],
+                    spots: [for (var i = 0; i < actU.length; i++) FlSpot(i.toDouble(), actU[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF3B82F6),
@@ -375,8 +412,9 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
 
   // 3. REVENUE OVERVIEW
   Widget _buildRevenueOverviewSection() {
-    final days = ['20', '21', '22', '23', '24', '25', '26'];
-    final revenues = [210.0, 310.0, 380.0, 490.0, 320.0, 420.0, 520.0];
+    final days = _lastDays(7, withMonth: false);
+    final revenues = [for (final v in st.series('revenue', 7)) v / 1000];
+    final revMax = _niceMax(revenues, 1);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -392,13 +430,13 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text('₹24,58,300', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(st.sum('revenue', 7)), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
           Row(
-            children: const [
-              Icon(Icons.north_east_rounded, size: 11, color: Color(0xFF10B981)),
-              SizedBox(width: 3),
-              Text('21.7% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+            children: [
+              const Icon(Icons.north_east_rounded, size: 11, color: Color(0xFF10B981)),
+              const SizedBox(width: 3),
+              Text(st.growthLabel('revenue'), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
             ],
           ),
           const SizedBox(height: 16),
@@ -407,7 +445,7 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
             child: BarChart(
               BarChartData(
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 100, getTitlesWidget: (v, meta) => Text('${v.toInt()}K', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: revMax / 4, getTitlesWidget: (v, meta) => Text('${v.toStringAsFixed(v < 10 ? 1 : 0)}K', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -423,8 +461,9 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: revMax / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 borderData: FlBorderData(show: false),
+                maxY: revMax,
                 barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: revenues[i], color: i == 6 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 16, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
               ),
             ),
@@ -436,6 +475,16 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
 
   // 4. USER DEMOGRAPHICS
   Widget _buildUserDemographicsSection() {
+    final g = st.sec('demographics')['gender'] as List? ?? const [];
+    num gv(String l) => (g.firstWhere((x) => x['label'] == l, orElse: () => {'n': 0})['n'] as num);
+    final male = gv('Male'), female = gv('Female'), other = gv('Other') + gv('Not set');
+    final totalG = male + female + other;
+    final ages = st.sec('demographics')['ages'] as List? ?? const [];
+    final ageTotal = ages.fold<num>(0, (a, x) => a + (x['n'] as num));
+    final topAge = ages.isEmpty ? 'Not enough data' : '${ages.first['label']} Years (${_pctOf(ages.first['n'] as num, ageTotal)})';
+    final cities = st.sec('demographics')['cities'] as List? ?? const [];
+    final cityTotal = cities.fold<num>(0, (a, x) => a + (x['n'] as num));
+    final topCity = cities.isEmpty ? 'Not enough data' : '${cities.first['label']} (${_pctOf(cities.first['n'] as num, cityTotal)})';
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade200)),
@@ -458,17 +507,17 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF65D300), value: 60.1, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 36.4, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 3.5, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF65D300), value: totalG == 0 ? 1 : male.toDouble(), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: female.toDouble(), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: other.toDouble(), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('52,689', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Users', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(st.n('users', 'total')), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Users', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -478,11 +527,11 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF65D300), 'Male', '60.1%'),
+                    _buildDemographicRow(const Color(0xFF65D300), 'Male', _pctOf(male, totalG)),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Female', '36.4%'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Female', _pctOf(female, totalG)),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other', '3.5%'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other', _pctOf(other, totalG)),
                   ],
                 ),
               ),
@@ -491,9 +540,9 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildDemographicFooterCard(Icons.person_pin_circle_outlined, 'Top Age Group', '25-34 Years (64.2%)')),
+              Expanded(child: _buildDemographicFooterCard(Icons.person_pin_circle_outlined, 'Top Age Group', topAge)),
               const SizedBox(width: 10),
-              Expanded(child: _buildDemographicFooterCard(Icons.public_rounded, 'Top Location', 'India (78.6%)')),
+              Expanded(child: _buildDemographicFooterCard(Icons.public_rounded, 'Top Location', topCity)),
             ],
           ),
         ],
@@ -541,12 +590,12 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
 
   // 5. TOP PERFORMING WORKOUTS
   Widget _buildTopPerformingWorkoutsSection() {
+    const imgs = ['assets/images/workout_exercise_cutout_1787895967050.jpg', 'assets/images/workout_banner_1.png', 'assets/images/workout_banner_2.png', 'assets/images/workout_banner_3.png', 'assets/images/workout_banner_4.png'];
+    final top = st.rows('topWorkouts');
     final workouts = [
-      {'title': 'Full Body Strength', 'users': 'Completed by 12,548 users', 'growth': '+18.2%', 'img': 'assets/images/workout_exercise_cutout_1787895967050.jpg'},
-      {'title': 'HIIT Fat Burn', 'users': 'Completed by 9,876 users', 'growth': '+14.4%', 'img': 'assets/images/workout_banner_1.png'},
-      {'title': 'Chest & Arms', 'users': 'Completed by 8,340 users', 'growth': '+12.1%', 'img': 'assets/images/workout_banner_2.png'},
-      {'title': 'Lower Body Power', 'users': 'Completed by 7,234 users', 'growth': '+10.8%', 'img': 'assets/images/workout_banner_3.png'},
-      {'title': 'Core Crusher', 'users': 'Completed by 6,450 users', 'growth': '+9.2%', 'img': 'assets/images/workout_banner_4.png'},
+      for (var i = 0; i < top.length && i < 5; i++)
+        {'title': (top[i]['title'] ?? 'Workout').toString(), 'users': 'Started by ${fmtInt(top[i]['athletes'] as num? ?? 0)} users', 'growth': '${fmtInt(top[i]['completed'] as num? ?? 0)} done', 'img': imgs[i]},
+      if (top.isEmpty) {'title': 'No workouts tracked yet', 'users': 'Appears when users start workouts', 'growth': '', 'img': imgs[0]},
     ];
 
     return Container(
@@ -595,12 +644,12 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
 
   // 6. ORDERS STATUS
   Widget _buildOrdersStatusSection() {
+    const stageColors = [Color(0xFFF59E0B), Color(0xFF3B82F6), Color(0xFF8B5CF6), Color(0xFF10B981), Color(0xFF06B6D4), Color(0xFFEF4444), Color(0xFF64748B)];
+    final byStatus = st.rows('ordersByStatus');
+    final totalOrders = byStatus.fold<num>(0, (a, r) => a + (r['n'] as num));
     final stages = [
-      {'name': 'Pending', 'val': '156 (12.6%)', 'color': const Color(0xFFF59E0B)},
-      {'name': 'Confirmed', 'val': '245 (19.7%)', 'color': const Color(0xFF3B82F6)},
-      {'name': 'Processing', 'val': '312 (25.1%)', 'color': const Color(0xFF8B5CF6)},
-      {'name': 'Shipped', 'val': '353 (28.4%)', 'color': const Color(0xFF10B981)},
-      {'name': 'Delivered', 'val': '177 (14.2%)', 'color': const Color(0xFF06B6D4)},
+      for (var i = 0; i < byStatus.length && i < 7; i++)
+        {'name': byStatus[i]['status'].toString(), 'n': byStatus[i]['n'] as num, 'val': '${fmtInt(byStatus[i]['n'] as num)} (${_pctOf(byStatus[i]['n'] as num, totalOrders)})', 'color': stageColors[i]},
     ];
 
     return Container(
@@ -630,20 +679,16 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
                         borderData: FlBorderData(show: false),
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
-                        sections: [
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 156, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 245, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 312, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 353, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF06B6D4), value: 177, radius: 24, title: ''),
-                        ],
+                        sections: stages.isEmpty
+                            ? [PieChartSectionData(color: const Color(0xFFE2E8F0), value: 1, radius: 24, title: '')]
+                            : [for (final x in stages) PieChartSectionData(color: x['color'] as Color, value: (x['n'] as num).toDouble(), radius: 24, title: '')],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('1,243', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Orders', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(totalOrders), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Orders', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -680,10 +725,10 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
   // 7. APP ENGAGEMENT
   Widget _buildAppEngagementSection() {
     final engagements = [
-      {'title': 'Workouts Completed', 'val': '18,456', 'growth': '+16.2%', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Calories Burned', 'val': '2.45M', 'growth': '+14.7%', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Steps Tracked', 'val': '3.12M', 'growth': '+18.9%', 'icon': Icons.directions_walk_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Active Minutes', 'val': '456K', 'growth': '+12.3%', 'icon': Icons.timer_outlined, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Workouts Completed', 'val': fmtShort(st.n('fitness', 'completed')), 'growth': '${st.growthUp('workoutsDone') ? '+' : '-'}${st.growth('workoutsDone').abs().toStringAsFixed(1)}%', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Calories Burned', 'val': fmtShort(st.n('activity', 'caloriesBurned')), 'growth': '', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Steps Tracked', 'val': fmtShort(st.n('activity', 'steps')), 'growth': '', 'icon': Icons.directions_walk_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Active Minutes', 'val': fmtShort(st.n('fitness', 'minutes')), 'growth': '', 'icon': Icons.timer_outlined, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
     ];
 
     return Container(
@@ -747,11 +792,22 @@ class _AnalyticsOverviewViewState extends State<AnalyticsOverviewView> {
 
   // 8. RECENT ACTIVITY
   Widget _buildRecentActivityTableSection() {
+    const kinds = {
+      'user': ['New user registered', 'New', Color(0xFF10B981), Icons.person_add_rounded],
+      'order': ['New order placed', 'Order', Color(0xFF3B82F6), Icons.shopping_cart_rounded],
+      'trainer': ['Trainer application', 'Coach', Color(0xFFF97316), Icons.assignment_ind_rounded],
+      'subscription': ['Coach subscription', 'Paid', Color(0xFF8B5CF6), Icons.check_circle_rounded],
+    };
     final activities = [
-      {'title': 'New user registered', 'detail': 'Rohit Verma (rohit@gmail.com)', 'time': '2 min ago', 'status': 'New', 'color': const Color(0xFF10B981), 'icon': Icons.person_add_rounded},
-      {'title': 'New order placed', 'detail': 'Order #ORD-12543 (Whey Protein Isolate)', 'time': '5 min ago', 'status': 'Order', 'color': const Color(0xFF3B82F6), 'icon': Icons.shopping_cart_rounded},
-      {'title': 'Payment received', 'detail': '₹2,499 received from Razorpay', 'time': '10 min ago', 'status': 'Success', 'color': const Color(0xFF10B981), 'icon': Icons.check_circle_rounded},
-      {'title': 'Trainer application', 'detail': 'Vikram Singh applied for trainer', 'time': '15 min ago', 'status': 'Pending', 'color': const Color(0xFFF97316), 'icon': Icons.assignment_ind_rounded},
+      for (final r in st.rows('recentActivity').take(6))
+        {
+          'title': kinds[r['kind']]![0],
+          'detail': r['kind'] == 'user' ? '${r['title']} (${r['detail'] ?? ''})' : r['kind'] == 'trainer' ? '${r['title']} · ${r['detail']}' : '${r['title']} · ${r['detail']}',
+          'time': timeAgo(r['at']?.toString()),
+          'status': kinds[r['kind']]![1],
+          'color': kinds[r['kind']]![2],
+          'icon': kinds[r['kind']]![3],
+        },
     ];
 
     return Container(

@@ -7,7 +7,7 @@ class ApiConstants {
   /// (see lib/demo/demo_backend.dart) and nothing is saved anywhere.
   /// Images still load from their public Cloudflare R2 / CDN URLs.
   /// Build with --dart-define=DEMO_MODE=false to talk to the real backend.
-  static const bool demoMode = bool.fromEnvironment('DEMO_MODE', defaultValue: true);
+  static const bool demoMode = bool.fromEnvironment('DEMO_MODE', defaultValue: false);
 
   /// Demo admin login, only accepted in demo mode.
   static const String demoAdminEmail = 'admin@neurofit.demo';
@@ -20,7 +20,7 @@ class ApiConstants {
   static const bool useLocalBackend = false;
 
   /// Live Render Production Base URL
-  static const String liveRenderUrl = 'https://neurofit-full.onrender.com';
+  static const String liveRenderUrl = String.fromEnvironment('API_URL', defaultValue: 'https://neurofit-api.onrender.com');
 
   /// Local Backend Configuration
   static const int serverPort = 5000;
@@ -56,11 +56,7 @@ class ApiConstants {
         liveRenderUrl,
       ];
     } else {
-      return [
-        liveRenderUrl,
-        'http://$serverHost:$serverPort',
-        'http://192.168.1.34:$serverPort',
-      ];
+      return [liveRenderUrl];
     }
   }
 }
