@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
 
 class NutritionAnalyticsView extends StatefulWidget {
   final String selectedDateRange;
@@ -16,7 +17,12 @@ class NutritionAnalyticsView extends StatefulWidget {
   State<NutritionAnalyticsView> createState() => _NutritionAnalyticsViewState();
 }
 
-class _NutritionAnalyticsViewState extends State<NutritionAnalyticsView> {
+class _NutritionAnalyticsViewState extends State<NutritionAnalyticsView> with LiveStats {
+  num _nu(String k) => ins.n('nutrition', k);
+  double get _macroKcal => _nu('protein') * 4.0 + _nu('carbs') * 4.0 + _nu('fat') * 9.0;
+  double _macroShare(String k, int perG) => _macroKcal == 0 ? 0 : _nu(k) * perG / _macroKcal;
+  String _avgG(String k) => '${(_nu('days_logged') == 0 ? 0 : _nu(k) / st.n('nutrition', 'days_logged')).round()}g';
+
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
     return FadeTransition(
@@ -46,10 +52,10 @@ class _NutritionAnalyticsViewState extends State<NutritionAnalyticsView> {
 
   Widget _buildKpiCarousel() {
     final kpis = [
-      {'title': 'Total Meals Logged', 'val': '1.42M', 'growth': '+18.6% this month', 'icon': Icons.restaurant_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Avg Calorie Intake', 'val': '2,180 kcal', 'growth': 'Target: 2,200 kcal', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
-      {'title': 'Protein Adherence', 'val': '86.4%', 'growth': '+4.2% macro compliance', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Water Logs', 'val': '2.8L / Day', 'growth': 'Hydration goal met', 'icon': Icons.water_drop_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Meals Logged', 'val': fmtShort(_nu('meals')), 'growth': '${fmtInt(st.n('nutrition', 'users'))} people logging', 'icon': Icons.restaurant_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Avg Calorie Intake', 'val': '${fmtInt(_nu('avg_kcal'))} kcal', 'growth': 'Target: ${fmtInt(_nu('target_kcal'))} kcal', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
+      {'title': 'Protein Adherence', 'val': fmtPct(_nu('protein_adherence')), 'growth': 'days within 90% of target', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Water Logs', 'val': '${(st.n('nutrition', 'avg_water') * 0.25).toStringAsFixed(1)}L / Day', 'growth': '${fmtInt(_nu('water_logs'))} days logged', 'icon': Icons.water_drop_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return SingleChildScrollView(
@@ -108,18 +114,18 @@ class _NutritionAnalyticsViewState extends State<NutritionAnalyticsView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(6)),
-                child: const Text('Last 7 Days', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFFF59E0B))),
+                child: const Text('All time', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFFF59E0B))),
               ),
             ],
           ),
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(child: _buildMacroBar('Protein', '145g / 35%', const Color(0xFF3B82F6), 0.35)),
+              Expanded(child: _buildMacroBar('Protein', '${_avgG('protein')} / ${(_macroShare('protein', 4) * 100).round()}%', const Color(0xFF3B82F6), _macroShare('protein', 4))),
               const SizedBox(width: 10),
-              Expanded(child: _buildMacroBar('Carbohydrates', '220g / 45%', const Color(0xFF10B981), 0.45)),
+              Expanded(child: _buildMacroBar('Carbohydrates', '${_avgG('carbs')} / ${(_macroShare('carbs', 4) * 100).round()}%', const Color(0xFF10B981), _macroShare('carbs', 4))),
               const SizedBox(width: 10),
-              Expanded(child: _buildMacroBar('Healthy Fats', '52g / 20%', const Color(0xFFF59E0B), 0.20)),
+              Expanded(child: _buildMacroBar('Healthy Fats', '${_avgG('fat')} / ${(_macroShare('fat', 9) * 100).round()}%', const Color(0xFFF59E0B), _macroShare('fat', 9))),
             ],
           ),
         ],
@@ -144,11 +150,18 @@ class _NutritionAnalyticsViewState extends State<NutritionAnalyticsView> {
   }
 
   Widget _buildMealTimingAndLoggingCard() {
+    const slotColor = {'breakfast': Color(0xFFF59E0B), 'lunch': Color(0xFF10B981), 'snack': Color(0xFF8B5CF6), 'snacks': Color(0xFF8B5CF6), 'dinner': Color(0xFF3B82F6)};
+    final slots = ins.list('nutrition', 'slots');
+    final slotTotal = slots.fold<num>(0, (a, r) => a + ((r['n'] as num?) ?? 0));
     final mealSlots = [
-      {'slot': 'Breakfast', 'logs': '482K Logs', 'avgKcal': '520 kcal', 'pct': '32%', 'color': const Color(0xFFF59E0B)},
-      {'slot': 'Lunch', 'logs': '540K Logs', 'avgKcal': '680 kcal', 'pct': '38%', 'color': const Color(0xFF10B981)},
-      {'slot': 'Snacks', 'logs': '210K Logs', 'avgKcal': '240 kcal', 'pct': '14%', 'color': const Color(0xFF8B5CF6)},
-      {'slot': 'Dinner', 'logs': '410K Logs', 'avgKcal': '620 kcal', 'pct': '28%', 'color': const Color(0xFF3B82F6)},
+      for (final m in slots)
+        {
+          'slot': '${m['slot']}'.isEmpty ? 'Other' : '${m['slot']}'[0].toUpperCase() + '${m['slot']}'.substring(1),
+          'logs': '${fmtShort(m['n'] as num? ?? 0)} Logs',
+          'avgKcal': '${fmtInt(m['avg_kcal'] as num? ?? 0)} kcal',
+          'pct': share(m['n'] as num? ?? 0, slotTotal),
+          'color': slotColor['${m['slot']}'] ?? const Color(0xFF64748B),
+        },
     ];
 
     return Container(
@@ -186,10 +199,8 @@ class _NutritionAnalyticsViewState extends State<NutritionAnalyticsView> {
 
   Widget _buildTopLoggedItemsCard() {
     final items = [
-      {'name': 'Grilled Chicken Breast (200g)', 'cat': 'Poultry', 'count': '94.2K times', 'kcal': '330 kcal', 'p': '62g Protein'},
-      {'name': 'Rolled Oats with Whey (1 Bowl)', 'cat': 'Grains', 'count': '88.5K times', 'kcal': '420 kcal', 'p': '34g Protein'},
-      {'name': 'Medium Red Apple (150g)', 'cat': 'Fruits', 'count': '76.1K times', 'kcal': '78 kcal', 'p': '0.5g Protein'},
-      {'name': 'Greek Yogurt 0% Fat (200g)', 'cat': 'Dairy', 'count': '64.8K times', 'kcal': '130 kcal', 'p': '22g Protein'},
+      for (final f in ins.list('nutrition', 'topFoods'))
+        {'name': '${f['name']}', 'cat': '${f['cat']}'.isEmpty ? 'Food' : '${f['cat']}', 'count': '${fmtShort(f['n'] as num? ?? 0)} times', 'kcal': '${fmtInt(f['kcal'] as num? ?? 0)} kcal', 'p': '${f['protein'] ?? 0}g Protein'},
     ];
 
     return Container(

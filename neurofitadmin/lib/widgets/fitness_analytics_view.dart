@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import 'net_or_asset_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class FitnessAnalyticsView extends StatefulWidget {
@@ -17,7 +19,22 @@ class FitnessAnalyticsView extends StatefulWidget {
   State<FitnessAnalyticsView> createState() => _FitnessAnalyticsViewState();
 }
 
-class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
+class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> with LiveStats {
+  num _f(String k) => ins.n('fitness', k);
+  List<double> get _done7 => st.series('workoutsDone', 7);
+  List<double> get _users7 => ins.series('fitness', 'usersDaily', 7);
+  List<double> get _dur7 => ins.series('fitness', 'durationDaily', 7);
+  List<double> get _cal7 => ins.series('fitness', 'caloriesDaily', 7);
+  List<Map<String, dynamic>> get _types => ins.list('fitness', 'types');
+  double get _typesTotal => _types.fold<double>(0, (a, r) => a + ((r['n'] as num?) ?? 0).toDouble());
+  double _type(int i) => i < _types.length ? ((_types[i]['n'] as num?) ?? 0).toDouble() : 0;
+  String _typeName(int i) => i < _types.length ? '${_types[i]['label']}' : '-';
+  String _typeLine(int i) => '${share(_type(i), _typesTotal)} (${fmtInt(_type(i))})';
+  Map<String, dynamic> get _comp => ins.sub('fitness', 'completion');
+  double _c(String k) => ((_comp[k] as num?) ?? 0).toDouble();
+  double get _cTotal => _c('completed') + _c('incomplete') + _c('abandoned');
+  List<FlSpot> _sp(List<double> v) => [for (var i = 0; i < v.length; i++) FlSpot(i.toDouble(), v[i])];
+
   int _selectedFilterIndex = 2; // 0=Today, 1=Yesterday, 2=This Week, 3=Last Week, 4=This Month, 5=This Year, 6=Custom
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -185,13 +202,13 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
                     physics: const BouncingScrollPhysics(),
                     child: Row(
                       children: [
-                        _buildHeroStat('18,456', 'Workouts (↑16.2%)', const Color(0xFF10B981)),
+                        _buildHeroStat(fmtInt(st.n('fitness', 'completed')), 'Workouts (${st.growthUp('workoutsDone') ? '↑' : '↓'}${st.growth('workoutsDone').abs().toStringAsFixed(1)}%)', const Color(0xFF10B981)),
                         const SizedBox(width: 12),
-                        _buildHeroStat('7,893', 'Active Programs', const Color(0xFF8B5CF6)),
+                        _buildHeroStat(fmtInt(st.n('catalog', 'programs') + st.n('catalog', 'workouts')), 'Active Programs', const Color(0xFF8B5CF6)),
                         const SizedBox(width: 12),
-                        _buildHeroStat('2.45M', 'Calories (↑14.7%)', const Color(0xFFF97316)),
+                        _buildHeroStat(fmtShort(st.n('activity', 'caloriesBurned')), 'Calories burned', const Color(0xFFF97316)),
                         const SizedBox(width: 12),
-                        _buildHeroStat('24m 18s', 'Avg Duration', const Color(0xFF3B82F6)),
+                        _buildHeroStat(fmtDuration(_f('avg_seconds')), 'Avg Duration', const Color(0xFF3B82F6)),
                       ],
                     ),
                   ),
@@ -300,15 +317,15 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
             height: 170,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 50, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top([..._done7, ..._users7], 4) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 50, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: top([..._done7, ..._users7], 4) / 4, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = dayLabels(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -324,10 +341,10 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 250,
+                maxY: top([..._done7, ..._users7], 4),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 90), FlSpot(1, 140), FlSpot(2, 110), FlSpot(3, 160), FlSpot(4, 130), FlSpot(5, 180), FlSpot(6, 210)],
+                    spots: _sp(_done7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -335,7 +352,7 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
                     dotData: const FlDotData(show: true),
                   ),
                   LineChartBarData(
-                    spots: const [FlSpot(0, 40), FlSpot(1, 80), FlSpot(2, 60), FlSpot(3, 100), FlSpot(4, 90), FlSpot(5, 120), FlSpot(6, 150)],
+                    spots: _sp(_users7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF3B82F6),
@@ -375,18 +392,18 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 40.5, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 28.6, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 15.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF97316), value: 10.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFEC4899), value: 4.5, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _type(0) + (_typesTotal == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _type(1), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: _type(2), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF97316), value: _type(3), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFEC4899), value: _type(4), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('18,456', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      children: [
+                        Text(fmtInt(_typesTotal), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                         Text('Total Workouts', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
@@ -397,15 +414,15 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Strength', '40.5% (7,475)'),
+                    _buildDemographicRow(const Color(0xFF10B981), _typeName(0), _typeLine(0)),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Cardio', '28.6% (5,278)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), _typeName(1), _typeLine(1)),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'HIIT', '15.7% (2,897)'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), _typeName(2), _typeLine(2)),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFF97316), 'Yoga', '10.7% (1,975)'),
+                    _buildDemographicRow(const Color(0xFFF97316), _typeName(3), _typeLine(3)),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFEC4899), 'Flexibility', '4.5% (831)'),
+                    _buildDemographicRow(const Color(0xFFEC4899), _typeName(4), _typeLine(4)),
                   ],
                 ),
               ),
@@ -418,12 +435,12 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
 
   // 4. TOP PERFORMING MUSCLE GROUPS
   Widget _buildTopMuscleGroupsSection() {
+    const gColors = [Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF8B5CF6), Color(0xFF06B6D4), Color(0xFFF97316)];
+    final ms = ins.list('fitness', 'muscles');
+    final mTotal = ms.fold<num>(0, (a, r) => a + ((r['n'] as num?) ?? 0));
     final groups = [
-      {'name': 'Chest', 'pct': 0.331, 'val': '6,124 • 33.1%', 'color': const Color(0xFF10B981)},
-      {'name': 'Legs', 'pct': 0.281, 'val': '5,187 • 28.1%', 'color': const Color(0xFF3B82F6)},
-      {'name': 'Back', 'pct': 0.245, 'val': '4,524 • 24.5%', 'color': const Color(0xFF8B5CF6)},
-      {'name': 'Shoulders', 'pct': 0.189, 'val': '3,490 • 18.9%', 'color': const Color(0xFF06B6D4)},
-      {'name': 'Arms', 'pct': 0.147, 'val': '2,710 • 14.7%', 'color': const Color(0xFFF97316)},
+      for (var i = 0; i < ms.length; i++)
+        {'name': '${ms[i]['label']}', 'pct': mTotal == 0 ? 0.0 : ((ms[i]['n'] as num) / mTotal).toDouble(), 'val': '${fmtInt(ms[i]['n'] as num)} • ${share(ms[i]['n'] as num, mTotal)}', 'color': gColors[i % gColors.length]},
     ];
 
     return Container(
@@ -505,16 +522,16 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 78.6, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 16.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFEF4444), value: 4.7, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _c('completed') + (_cTotal == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF59E0B), value: _c('incomplete'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFEF4444), value: _c('abandoned'), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('78.6%', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      children: [
+                        Text(share(_c('completed'), _cTotal), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                         Text('Completion Rate', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
@@ -525,11 +542,11 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Completed', '14,506 (78.6%)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Completed', '${fmtInt(_c('completed'))} (${share(_c('completed'), _cTotal)})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF59E0B), 'Incomplete', '3,087 (16.7%)'),
+                    _buildDemographicRow(const Color(0xFFF59E0B), 'Incomplete', '${fmtInt(_c('incomplete'))} (${share(_c('incomplete'), _cTotal)})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFEF4444), 'Abandoned', '863 (4.7%)'),
+                    _buildDemographicRow(const Color(0xFFEF4444), 'Abandoned', '${fmtInt(_c('abandoned'))} (${share(_c('abandoned'), _cTotal)})'),
                   ],
                 ),
               ),
@@ -556,24 +573,24 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('24m 18s', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtDuration(_f('avg_seconds')), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 8.8% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${(_dur7.isEmpty ? 0 : _dur7.last).toStringAsFixed(0)} min today', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 130,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 10, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_dur7, 10) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 40,
+                maxY: top(_dur7, 10),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 18), FlSpot(1, 22), FlSpot(2, 28), FlSpot(3, 24), FlSpot(4, 26), FlSpot(5, 23), FlSpot(6, 32)],
+                    spots: _sp(_dur7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -612,24 +629,24 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('2.45M', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtShort(st.n('activity', 'caloriesBurned')), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 14.7% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${fmtInt(_cal7.fold<double>(0, (a, b) => a + b))} kcal in the last 7 days', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 130,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_cal7, 100) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 400,
+                maxY: top(_cal7, 100),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 180), FlSpot(1, 260), FlSpot(2, 220), FlSpot(3, 310), FlSpot(4, 270), FlSpot(5, 330), FlSpot(6, 380)],
+                    spots: _sp(_cal7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF8B5CF6),
@@ -655,11 +672,8 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
   // 6. POPULAR WORKOUT PROGRAMS
   Widget _buildPopularProgramsSection() {
     final programs = [
-      {'title': 'Fat Burn HIIT Program', 'desc': '3,248 Users', 'growth': '+18.4%', 'img': 'assets/images/workout_banner_1.png'},
-      {'title': 'Strength Building Program', 'desc': '2,870 Users', 'growth': '+15.2%', 'img': 'assets/images/workout_banner_2.png'},
-      {'title': 'Beginner Full Body Plan', 'desc': '2,410 Users', 'growth': '+12.7%', 'img': 'assets/images/workout_banner_3.png'},
-      {'title': '6-Pack Abs Program', 'desc': '2,150 Users', 'growth': '+11.4%', 'img': 'assets/images/workout_banner_4.png'},
-      {'title': 'Yoga for Flexibility', 'desc': '1,890 Users', 'growth': '+9.8%', 'img': 'assets/images/workout_exercise_cutout_1787895967050.jpg'},
+      for (final p in ins.list('fitness', 'programs'))
+        {'title': '${p['title']}', 'desc': '${fmtInt(p['athletes'] as num? ?? 0)} Users', 'growth': '${fmtInt(p['completed'] as num? ?? 0)} done', 'img': ''},
     ];
 
     return Container(
@@ -684,7 +698,7 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(p['img'] as String, width: 38, height: 38, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.fitness_center)),
+                  child: NetOrAssetImage(p['img'] as String, width: 38, height: 38, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.fitness_center)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -707,8 +721,8 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
 
   // 7. USER ENGAGEMENT IN FITNESS
   Widget _buildUserEngagementSection() {
-    final days = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'];
-    final heights = [120.0, 160.0, 140.0, 190.0, 220.0, 180.0, 240.0];
+    final days = weekdayLabels(7);
+    final heights = _users7;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -721,10 +735,10 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildMiniMetric('Active Users', '23,456', '+12.4%'),
-              _buildMiniMetric('New Users', '4,321', '+14.3%'),
-              _buildMiniMetric('Repeating Users', '19,135', '+15.7%'),
-              _buildMiniMetric('Inactive Users', '3,214', '-2.1%'),
+              _buildMiniMetric('Active Users', fmtInt(_f('active')), '7 days'),
+              _buildMiniMetric('New Users', fmtInt(_f('new')), '7 days'),
+              _buildMiniMetric('Repeating Users', fmtInt(_f('repeating')), 'all time'),
+              _buildMiniMetric('Inactive Users', fmtInt(_f('inactive')), '14+ days'),
             ],
           ),
           const SizedBox(height: 16),
@@ -774,11 +788,8 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
   // 7. RECENT FITNESS ACTIVITY
   Widget _buildRecentFitnessActivitySection() {
     final activities = [
-      {'user': 'Rahul Verma', 'act': 'completed a workout: Full Body Strength', 'time': '2 min ago', 'img': 'assets/images/trainers_hero_banner.jpg'},
-      {'user': 'Priya Patel', 'act': 'completed a workout: HIIT Cardio Blast', 'time': '11 min ago', 'img': 'assets/images/athlete_transform_1787825621309.jpg'},
-      {'user': 'Amit Sharma', 'act': 'started a program: Strength Building Program', 'time': '15 min ago', 'img': 'assets/images/hero_banner_4.png'},
-      {'user': 'Neha Singh', 'act': 'logged a live session: Yoga for Flexibility', 'time': '19 min ago', 'img': 'assets/images/hero_banner_1.png'},
-      {'user': 'Karan Mehra', 'act': 'completed a workout: 6-Pack Abs Workout', 'time': '29 min ago', 'img': 'assets/images/workout_banner_1.png'},
+      for (final a in ins.list('fitness', 'recent'))
+        {'user': '${a['name'] ?? 'User'}', 'act': '${a['done'] == true ? 'completed' : 'started'} a workout: ${a['title']}', 'time': timeAgo(a['at']?.toString()), 'img': '${a['photo'] ?? ''}'},
     ];
 
     return Container(
@@ -802,7 +813,7 @@ class _FitnessAnalyticsViewState extends State<FitnessAnalyticsView> {
               decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14)),
               child: Row(
                 children: [
-                  ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.asset(a['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, st) => const Icon(Icons.person))),
+                  ClipRRect(borderRadius: BorderRadius.circular(16), child: NetOrAssetImage(a['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, st) => const Icon(Icons.person))),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(

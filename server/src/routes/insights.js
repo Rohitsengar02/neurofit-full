@@ -36,7 +36,7 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
     retention, platforms, heat, sessions, returning, goalsNew, signups90,
     rev, revDaily, revMonthly, payMethods, byUserType, plans, orderCats, cities, aov, refunds, orderDaily,
     trainerStatus, trainerCats, ratingBuckets, topTrainers, trainerGrowth, liveDaily, earnDaily, payout,
-    fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily, txns, ratingDaily, ratingAll, regs, tActs,
+    fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily, txns, ratingDaily, ratingAll, regs, tActs, wTypes, wMuscles, wDone, wDur, wCal, wRecent, wUsersDaily, mealSlots, topFoods, targets,
   ] = await Promise.all([
     // ---------- users ----------
     one(`SELECT
@@ -170,6 +170,32 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
           (SELECT 'update', COALESCE(data->>'name', 'Coach'), COALESCE(data->>'photo',''), 'updated their coach profile', updated_at
              FROM docs WHERE collection = 'trainers' AND updated_at > created_at + interval '1 minute' ORDER BY updated_at DESC LIMIT 5)
           ORDER BY at DESC LIMIT 6`),
+    rows(`SELECT initcap(COALESCE(NULLIF(w.data->>'categoryName',''), NULLIF(w.data->>'category',''), NULLIF(w.data->>'type',''), 'Other')) AS label, count(*)::int AS n
+          FROM user_records p LEFT JOIN docs w ON w.collection = 'workouts' AND w.id = p.data->>'workoutId'
+          WHERE p.collection = 'workout_progress' GROUP BY 1 ORDER BY 2 DESC LIMIT 5`),
+    rows(`SELECT initcap(COALESCE(NULLIF(e->>'muscleGroup',''), NULLIF(e->>'bodyPart',''), NULLIF(e->>'targetMuscle',''), 'Full body')) AS label, count(*)::int AS n
+          FROM user_records p JOIN docs w ON w.collection = 'workouts' AND w.id = p.data->>'workoutId'
+          CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(w.data->'exercises') = 'array' THEN w.data->'exercises' ELSE '[]'::jsonb END) e
+          WHERE p.collection = 'workout_progress' AND p.client_updated_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 5`),
+    one(`SELECT count(*) FILTER (WHERE data->>'dayCompleted' = 'true')::int AS completed,
+           count(*) FILTER (WHERE COALESCE(data->>'dayCompleted','false') <> 'true' AND client_updated_at > now() - interval '7 days')::int AS incomplete,
+           count(*) FILTER (WHERE COALESCE(data->>'dayCompleted','false') <> 'true' AND client_updated_at <= now() - interval '7 days')::int AS abandoned
+         FROM user_records WHERE collection = 'workout_progress'`),
+    rows(`SELECT date_trunc('day', client_updated_at) AS day, avg(NULLIF(data->>'totalDurationSeconds','')::numeric) / 60 AS v
+          FROM user_records WHERE collection = 'workout_progress' AND client_updated_at > now() - interval '30 days' GROUP BY 1`),
+    rows(`SELECT date_trunc('day', client_updated_at) AS day, sum((data->>'caloriesBurned')::numeric) AS v
+          FROM user_records WHERE collection = 'workout_progress' AND data->>'caloriesBurned' ~ '^[0-9.]+$' AND client_updated_at > now() - interval '30 days' GROUP BY 1`),
+    rows(`SELECT u.name, u.photo_url AS photo, COALESCE(p.data->>'workoutTitle', 'a workout') AS title, (p.data->>'dayCompleted' = 'true') AS done, p.client_updated_at AS at
+          FROM user_records p JOIN users u ON u.id = p.user_id WHERE p.collection = 'workout_progress' ORDER BY p.client_updated_at DESC LIMIT 5`),
+    rows(`SELECT date_trunc('day', client_updated_at) AS day, count(DISTINCT user_id) AS v FROM user_records WHERE collection = 'workout_progress' AND client_updated_at > now() - interval '30 days' GROUP BY 1`),
+    rows(`SELECT lower(COALESCE(m->>'mealType', 'snack')) AS slot, count(*)::int AS n, COALESCE(avg(NULLIF(m->>'calories','')::numeric), 0) AS avg_kcal, COALESCE(sum(NULLIF(m->>'calories','')::numeric), 0) AS kcal
+          FROM user_records r CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r.data->'meals') = 'array' THEN r.data->'meals' ELSE '[]'::jsonb END) m
+          WHERE r.collection = 'nutrition_day' GROUP BY 1 ORDER BY 2 DESC`),
+    rows(`SELECT COALESCE(m->>'foodName', m->>'name', 'Meal') AS name, max(COALESCE(m->>'category', m->>'source', '')) AS cat, count(*)::int AS n,
+                 round(avg(NULLIF(m->>'calories','')::numeric)) AS kcal, round(avg(NULLIF(m->>'protein','')::numeric), 1) AS protein
+          FROM user_records r CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r.data->'meals') = 'array' THEN r.data->'meals' ELSE '[]'::jsonb END) m
+          WHERE r.collection = 'nutrition_day' GROUP BY 1 ORDER BY 3 DESC LIMIT 5`),
+    one(`SELECT COALESCE(round(avg(NULLIF(data->>'targetCalories','')::numeric)), 0) AS target_kcal FROM user_records WHERE collection = 'nutrition_day'`),
   ]);
 
   const heatmap = Array.from({ length: 7 }, () => Array(7).fill(0));
@@ -186,8 +212,9 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
       paymentMethods: payMethods.map(num), byUserType: byUserType.map(num), plans: plans.map(num), transactions: txns.map(num) },
     orders: { categories: orderCats.map(num), cities: cities.map(num), aovDaily: fill(aov, 30), daily: fill(orderDaily, 30), ...num(refunds) },
     trainers: { status: trainerStatus, categories: trainerCats, ratings: ratingBuckets, top: topTrainers.map(num), growth: fill(trainerGrowth, 30), liveDaily: fill(liveDaily, 30), earningsDaily: fill(earnDaily, 30), payout: payout.map(num), ratingDaily: fill(ratingDaily, 30), rating: num(ratingAll), recent: regs, activity: tActs },
-    fitness: { ...num(fitnessUsers), daily: fill(workoutDaily, 30), programs },
-    nutrition: { ...num(nutrition), daily: fill(nutritionDaily, 30) },
+    fitness: { ...num(fitnessUsers), daily: fill(workoutDaily, 30), programs, types: wTypes, muscles: wMuscles, completion: num(wDone),
+      durationDaily: fill(wDur, 30), caloriesDaily: fill(wCal, 30), recent: wRecent, usersDaily: fill(wUsersDaily, 30) },
+    nutrition: { ...num(nutrition), daily: fill(nutritionDaily, 30), slots: mealSlots.map(num), topFoods: topFoods.map(num), ...num(targets) },
   } });
 });
 
