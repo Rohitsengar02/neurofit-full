@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import 'net_or_asset_image.dart';
 
 class NutritionDietPlansView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,99 +23,91 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
   int _selectedFilterIndex = 0;
   String _searchQuery = '';
 
-  final List<String> _dietCategories = ['All Diet Plans', 'High Protein Shred', 'Keto Protocol', 'Plant-Based Fuel', 'Lean Bulk'];
+  List<String> get _dietCategories => ['All Diet Plans', ...{..._defaultCats, for (final d in _src.items) '${d['category'] ?? 'Other'}'}];
+  static const _defaultCats = ['High Protein Shred', 'Keto Protocol', 'Plant-Based Fuel', 'Lean Bulk'];
 
-  final List<String> _availableRecipes = [
-    'High-Protein Blueberry Whey Oatmeal',
-    'Lemon Herb Grilled Chicken with Quinoa',
-    'Avocado & Egg Salad with Sourdough',
-    'Tofu & Edamame Teriyaki Power Bowl',
-    'Crispy Air-Fryer Salmon Bowl',
-    'Greek Yogurt & Mixed Almonds Snack',
-  ];
+  final AdminList _src = AdminList.of('/diet-plans?limit=1000');
+  final AdminList _recipes = AdminList.of('/recipes?limit=2000');
 
-  late List<Map<String, dynamic>> _dietPlansList;
+  List<String> get _availableRecipes {
+    final r = [for (final x in _recipes.items) '${x['title'] ?? x['name'] ?? ''}'].where((t) => t.isNotEmpty).toSet().toList();
+    return r.isEmpty ? ['Add recipes first'] : r;
+  }
+
+  Map<String, dynamic>? _recipe(String title) {
+    for (final x in _recipes.items) {
+      if ('${x['title'] ?? x['name']}' == title) return x;
+    }
+    return null;
+  }
+
+  static double _d(dynamic v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}'.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+
+  static Map<String, dynamic> _row(Map<String, dynamic> d) {
+    final days = (d['durationDays'] as num?)?.toInt();
+    final enrolled = (d['enrolledCount'] as num? ?? 0).toInt();
+    return {
+      ...d,
+      'id': d['id'],
+      'title': '${d['title'] ?? d['name'] ?? 'Diet plan'}',
+      'category': '${d['category'] ?? 'Other'}',
+      'tag': d['isFeatured'] == true ? '🔥 Featured' : '${d['tag'] ?? d['category'] ?? ''}',
+      'calories': '${fmtInt(_d(d['calories'] ?? d['targetCalories']))} kcal / Day',
+      'macros': 'P: ${_d(d['protein']).round()}g • C: ${_d(d['carbs']).round()}g • F: ${_d(d['fat']).round()}g',
+      'duration': days == null ? '${d['duration'] ?? '-'}' : '$days Days',
+      'enrolled': '${fmtInt(enrolled)} Athletes',
+      'rating': d['rating'] == null ? 'New' : '${d['rating']} ★',
+      'goal': '${d['goal'] ?? d['description'] ?? ''}',
+      'img': '${d['imageUrl'] ?? d['image'] ?? ''}',
+      'meals': [
+        for (final m in (d['meals'] as List? ?? const []))
+          if (m is Map) {'slot': '${m['slot'] ?? ''}', 'recipe': '${m['recipe'] ?? m['title'] ?? ''}', 'kcal': '${_d(m['calories'] ?? m['kcal']).round()} kcal'},
+      ],
+    };
+  }
+
+  List<Map<String, dynamic>> get _dietPlansList => [for (final d in _src.items) _row(d)];
+
+  void _changed() { if (mounted) setState(() {}); }
 
   @override
   void initState() {
     super.initState();
+    _src.addListener(_changed);
+    _recipes.addListener(_changed);
+    _src.load();
+    _recipes.load();
+  }
 
-    _dietPlansList = [
-      {
-        'id': 'DIET-301',
-        'title': '21-Day High-Protein Lean Shred Diet',
-        'category': 'High Protein Shred',
-        'tag': '🔥 Most Popular',
-        'calories': '2,100 kcal / Day',
-        'macros': 'P: 180g (35%) • C: 200g (40%) • F: 55g (25%)',
-        'duration': '21 Days',
-        'enrolled': '14,200 Athletes',
-        'rating': '4.9 ★',
-        'goal': 'Rapid Fat Loss with Muscle Retention',
-        'img': 'assets/images/workout_banner_1.png',
-        'meals': [
-          {'slot': 'Breakfast', 'recipe': 'High-Protein Blueberry Whey Oatmeal', 'kcal': '420 kcal'},
-          {'slot': 'Lunch', 'recipe': 'Lemon Herb Grilled Chicken with Quinoa', 'kcal': '540 kcal'},
-          {'slot': 'Snack', 'recipe': 'Greek Yogurt & Mixed Almonds Snack', 'kcal': '280 kcal'},
-          {'slot': 'Dinner', 'recipe': 'Crispy Air-Fryer Salmon Bowl', 'kcal': '580 kcal'},
-        ],
-      },
-      {
-        'id': 'DIET-302',
-        'title': 'Ketogenic Metabolic Fat Burn Protocol',
-        'category': 'Keto Protocol',
-        'tag': 'Low Carb',
-        'calories': '1,950 kcal / Day',
-        'macros': 'P: 140g (30%) • C: 25g (5%) • F: 145g (65%)',
-        'duration': '4 Weeks',
-        'enrolled': '8,650 Athletes',
-        'rating': '4.8 ★',
-        'goal': 'Ketosis & Accelerated Lipolysis',
-        'img': 'assets/images/athlete_transform_1787825621309.jpg',
-        'meals': [
-          {'slot': 'Breakfast', 'recipe': 'Avocado & Egg Salad with Sourdough', 'kcal': '460 kcal'},
-          {'slot': 'Lunch', 'recipe': 'Grilled Chicken with Garlic Butter Asparagus', 'kcal': '520 kcal'},
-          {'slot': 'Dinner', 'recipe': 'Wild Salmon Fillet with Olive Oil Salad', 'kcal': '620 kcal'},
-        ],
-      },
-      {
-        'id': 'DIET-303',
-        'title': 'Plant-Based Athlete Muscle Fuel',
-        'category': 'Plant-Based Fuel',
-        'tag': '100% Vegan',
-        'calories': '2,400 kcal / Day',
-        'macros': 'P: 150g (25%) • C: 320g (55%) • F: 50g (20%)',
-        'duration': '8 Weeks',
-        'enrolled': '6,410 Athletes',
-        'rating': '4.9 ★',
-        'goal': 'Endurance, Recovery & Clean Bulking',
-        'img': 'assets/images/hero_banner_1.png',
-        'meals': [
-          {'slot': 'Breakfast', 'recipe': 'Chia Seed & Soy Milk Protein Oatmeal', 'kcal': '480 kcal'},
-          {'slot': 'Lunch', 'recipe': 'Tofu & Edamame Teriyaki Power Bowl', 'kcal': '580 kcal'},
-          {'slot': 'Dinner', 'recipe': 'Lentil & Sweet Potato Protein Curry', 'kcal': '640 kcal'},
-        ],
-      },
-      {
-        'id': 'DIET-304',
-        'title': 'Clean Hypertrophy 3000 kcal Bulk Diet',
-        'category': 'Lean Bulk',
-        'tag': 'Mass Gainer',
-        'calories': '3,050 kcal / Day',
-        'macros': 'P: 210g (30%) • C: 380g (50%) • F: 75g (20%)',
-        'duration': '12 Weeks',
-        'enrolled': '9,120 Athletes',
-        'rating': '5.0 ★',
-        'goal': 'Lean Muscle Hypertrophy without Fat Gain',
-        'img': 'assets/images/hero_banner_4.png',
-        'meals': [
-          {'slot': 'Breakfast', 'recipe': 'Double Scoop Whey Oatmeal with Peanut Butter', 'kcal': '680 kcal'},
-          {'slot': 'Lunch', 'recipe': 'Extra Large Chicken & Brown Rice Bowl', 'kcal': '780 kcal'},
-          {'slot': 'Snack', 'recipe': 'Mass Protein Shake with Banana & Honey', 'kcal': '520 kcal'},
-          {'slot': 'Dinner', 'recipe': 'Salmon Fillet with Sweet Potato Mash', 'kcal': '750 kcal'},
-        ],
-      },
-    ];
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    _recipes.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _save(Map<String, dynamic>? existing, Map<String, dynamic> body) async {
+    try {
+      if (existing == null) {
+        await Api.send('POST', '/diet-plans', {...body, 'isActive': true, 'status': 'Active', 'enrolledCount': 0});
+      } else {
+        await Api.send('PUT', '/diet-plans/${existing['id']}', body);
+      }
+      await _src.load();
+      _showSnackbar(existing == null ? 'Diet Plan "${body['title']}" published!' : 'Diet Plan "${body['title']}" updated.', const Color(0xFF8B5CF6));
+    } catch (e) {
+      _showSnackbar('Could not save: $e', const Color(0xFFEF4444));
+    }
+  }
+
+  Future<void> _delete(Map<String, dynamic> d) async {
+    try {
+      await Api.send('DELETE', '/diet-plans/${d['id']}');
+      await _src.load();
+      _showSnackbar('Diet plan deleted.', const Color(0xFFEF4444));
+    } catch (e) {
+      _showSnackbar('Could not delete: $e', const Color(0xFFEF4444));
+    }
   }
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -137,13 +132,21 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
     );
   }
 
-  void _showAddDietPlanDialog() {
-    final titleController = TextEditingController();
-    final kcalController = TextEditingController(text: '2,200 kcal/Day');
-    String selectedCat = 'High Protein Shred';
-    String selectedBreakfast = _availableRecipes[0];
-    String selectedLunch = _availableRecipes[1];
-    String selectedDinner = _availableRecipes[4];
+  void _showAddDietPlanDialog([Map<String, dynamic>? existing]) {
+    final e = existing ?? const <String, dynamic>{};
+    final opts = _availableRecipes;
+    String pick(String slot, int i) {
+      for (final m in (e['meals'] as List? ?? const [])) {
+        if (m is Map && m['slot'] == slot && opts.contains('${m['recipe']}')) return '${m['recipe']}';
+      }
+      return opts[i < opts.length ? i : 0];
+    }
+    final titleController = TextEditingController(text: '${e['title'] ?? e['name'] ?? ''}');
+    final kcalController = TextEditingController(text: existing == null ? '' : '${_d(e['calories']).round()}');
+    String selectedCat = existing == null ? 'High Protein Shred' : '${e['category'] ?? 'High Protein Shred'}';
+    String selectedBreakfast = pick('Breakfast', 0);
+    String selectedLunch = pick('Lunch', 1);
+    String selectedDinner = pick('Dinner', 2);
 
     showDialog(
       context: context,
@@ -216,28 +219,21 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
               onPressed: () {
                 final title = titleController.text.trim();
                 if (title.isNotEmpty) {
-                  setState(() {
-                    _dietPlansList.insert(0, {
-                      'id': 'DIET-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
-                      'title': title,
-                      'category': selectedCat,
-                      'tag': 'New Diet',
-                      'calories': kcalController.text.trim(),
-                      'macros': 'P: 160g • C: 190g • F: 50g',
-                      'duration': '21 Days',
-                      'enrolled': '0 Athletes',
-                      'rating': '5.0 ★',
-                      'goal': 'Custom Macro Adherence',
-                      'img': 'assets/images/workout_banner_1.png',
-                      'meals': [
-                        {'slot': 'Breakfast', 'recipe': selectedBreakfast, 'kcal': '420 kcal'},
-                        {'slot': 'Lunch', 'recipe': selectedLunch, 'kcal': '540 kcal'},
-                        {'slot': 'Dinner', 'recipe': selectedDinner, 'kcal': '580 kcal'},
-                      ],
-                    });
-                  });
                   Navigator.pop(ctx);
-                  _showSnackbar('Diet Plan "$title" published!', const Color(0xFF8B5CF6));
+                  final meals = [
+                    for (final m in [['Breakfast', selectedBreakfast], ['Lunch', selectedLunch], ['Dinner', selectedDinner]])
+                      if (_recipe(m[1]) != null)
+                        {'slot': m[0], 'recipe': m[1], 'recipeId': _recipe(m[1])!['id'], 'calories': _d(_recipe(m[1])!['calories']).round(),
+                         'protein': _d(_recipe(m[1])!['protein']), 'carbs': _d(_recipe(m[1])!['carbs']), 'fat': _d(_recipe(m[1])!['fat'])},
+                  ];
+                  double sum(String k) => meals.fold<double>(0, (a, m) => a + _d(m[k]));
+                  final kcal = _d(kcalController.text);
+                  _save(existing, {
+                    'title': title, 'name': title, 'category': selectedCat, 'meals': meals,
+                    'calories': kcal > 0 ? kcal.round() : sum('calories').round(),
+                    'protein': sum('protein').round(), 'carbs': sum('carbs').round(), 'fat': sum('fat').round(),
+                    if (existing == null) 'durationDays': 21,
+                  });
                 }
               },
               child: const Text('Publish Diet Plan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
@@ -296,7 +292,7 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.asset(d['img'] as String, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.restaurant_menu, size: 36))),
+                ClipRRect(borderRadius: BorderRadius.circular(14), child: NetOrAssetImage(d['img'] as String, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.restaurant_menu, size: 36))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -376,7 +372,7 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     onPressed: () {
                       Navigator.pop(context);
-                      _showSnackbar('Edit diet plan opened.', const Color(0xFF3B82F6));
+                      _showAddDietPlanDialog(d);
                     },
                     icon: const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
                     label: const Text('Edit Diet Plan', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -388,8 +384,7 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     onPressed: () {
                       Navigator.pop(context);
-                      setState(() => _dietPlansList.removeWhere((item) => item['id'] == d['id']));
-                      _showSnackbar('Diet plan deleted.', const Color(0xFFEF4444));
+                      _delete(d);
                     },
                     icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Colors.white),
                     label: const Text('Delete Diet Plan', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -420,11 +415,17 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
   }
 
   Widget _buildKpiCarousel() {
+    final items = _src.items;
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final added = items.where((d) => DateTime.tryParse('${d['createdAt'] ?? ''}')?.isAfter(weekAgo) ?? false).length;
+    final enrolled = items.fold<num>(0, (a, d) => a + (d['enrolledCount'] as num? ?? 0));
+    final top = [...items]..sort((a, b) => (b['enrolledCount'] as num? ?? 0).compareTo(a['enrolledCount'] as num? ?? 0));
+    final durs = [for (final d in items) if (d['durationDays'] is num) (d['durationDays'] as num).toDouble()];
     final kpis = [
-      {'title': 'Diet Plans', 'val': '32 Plans', 'growth': '+6 New protocols', 'icon': Icons.restaurant_menu_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Athletes Enrolled', 'val': '38.4K', 'growth': '+21.4% adherence', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'High-Protein Shred', 'val': '14.2K Users', 'growth': 'Top selected', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Avg Duration', 'val': '28 Days', 'growth': '4-Week cycle', 'icon': Icons.date_range_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Diet Plans', 'val': '${items.length} Plans', 'growth': '+$added New protocols', 'icon': Icons.restaurant_menu_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Athletes Enrolled', 'val': fmtShort(enrolled), 'growth': 'Across all plans', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': top.isEmpty ? 'Top Plan' : '${top.first['title'] ?? top.first['name']}', 'val': top.isEmpty ? '-' : '${fmtShort(top.first['enrolledCount'] as num? ?? 0)} Users', 'growth': 'Top selected', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Avg Duration', 'val': durs.isEmpty ? '-' : '${(durs.reduce((a, b) => a + b) / durs.length).round()} Days', 'growth': 'Average plan length', 'icon': Icons.date_range_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return SingleChildScrollView(
@@ -539,7 +540,7 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
 
   Widget _buildDietPlansGrid() {
     final filtered = _dietPlansList.where((d) {
-      if (_selectedFilterIndex > 0) {
+      if (_selectedFilterIndex > 0 && _selectedFilterIndex < _dietCategories.length) {
         final cat = _dietCategories[_selectedFilterIndex];
         if (d['category'] != cat) return false;
       }
@@ -585,7 +586,7 @@ class _NutritionDietPlansViewState extends State<NutritionDietPlansView> {
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                child: Image.asset(
+                child: NetOrAssetImage(
                   d['img'] as String,
                   height: 90,
                   width: double.infinity,

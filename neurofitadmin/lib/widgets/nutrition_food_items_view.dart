@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import 'net_or_asset_image.dart';
 
 class NutritionFoodItemsView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,100 +23,72 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
   int _selectedCatIndex = 0;
   String _searchQuery = '';
 
-  final List<String> _foodCategories = ['All Foods', 'Fruits', 'Poultry & Meat', 'Grains & Oats', 'Dairy & Eggs', 'Nuts & Seeds', 'Seafood'];
 
-  late List<Map<String, dynamic>> _foodItemsList;
+  final AdminList _src = AdminList.of('/foods?limit=2000');
+
+  static String _num(dynamic v) {
+    final d = v is num ? v.toDouble() : double.tryParse('${v ?? ''}'.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+    return d == d.roundToDouble() ? d.toInt().toString() : d.toStringAsFixed(1);
+  }
+
+  static Map<String, dynamic> _row(Map<String, dynamic> f) => {
+        ...f,
+        'id': f['id'],
+        'name': '${f['name'] ?? f['title'] ?? 'Food'}',
+        'category': '${f['category'] ?? 'Other'}',
+        'serving': '${f['servingSize'] ?? f['serving'] ?? '100 g'}',
+        'calories': '${_num(f['calories'])} kcal',
+        'protein': '${_num(f['protein'])}g',
+        'carbs': '${_num(f['carbs'])}g',
+        'fiber': '${_num(f['fiber'])}g',
+        'fats': '${_num(f['fat'] ?? f['fats'])}g',
+        'sugar': '${_num(f['sugar'])}g',
+        'vitamins': '${f['vitamins'] ?? ''}'.isEmpty ? 'Not added yet' : '${f['vitamins']}',
+        'img': '${f['imageUrl'] ?? f['image'] ?? ''}',
+      };
+
+  List<Map<String, dynamic>> get _foodItemsList => [for (final f in _src.items) _row(f)];
+
+  List<String> get _foodCategories => ['All Foods', ...{..._defaultCats, for (final f in _src.items) '${f['category'] ?? 'Other'}'}];
+  static const _defaultCats = ['Fruits', 'Vegetables', 'Poultry & Meat', 'Grains & Oats', 'Dairy & Eggs', 'Nuts & Seeds', 'Seafood'];
+
+  void _changed() { if (mounted) setState(() {}); }
 
   @override
   void initState() {
     super.initState();
+    _src.addListener(_changed);
+    _src.load();
+  }
 
-    _foodItemsList = [
-      {
-        'id': 'FOOD-101',
-        'name': 'Fresh Red Apple',
-        'category': 'Fruits',
-        'serving': '1 Medium (182g)',
-        'calories': '95 kcal',
-        'protein': '0.5g',
-        'carbs': '25g',
-        'fiber': '4.4g',
-        'fats': '0.3g',
-        'sugar': '19g',
-        'vitamins': 'Vitamin C (14%), Potassium (6%), Antioxidants',
-        'img': 'assets/images/hero_banner_1.png',
-      },
-      {
-        'id': 'FOOD-102',
-        'name': 'Raw Boneless Chicken Breast',
-        'category': 'Poultry & Meat',
-        'serving': '100g raw',
-        'calories': '165 kcal',
-        'protein': '31.0g',
-        'carbs': '0.0g',
-        'fiber': '0.0g',
-        'fats': '3.6g',
-        'sugar': '0g',
-        'vitamins': 'Niacin (B3 74%), Vitamin B6 (30%), Phosphorus',
-        'img': 'assets/images/athlete_transform_1787825621309.jpg',
-      },
-      {
-        'id': 'FOOD-103',
-        'name': 'Whole Rolled Oats',
-        'category': 'Grains & Oats',
-        'serving': '100g dry',
-        'calories': '389 kcal',
-        'protein': '16.9g',
-        'carbs': '66.3g',
-        'fiber': '10.6g',
-        'fats': '6.9g',
-        'sugar': '0g',
-        'vitamins': 'Beta-Glucan Fiber, Magnesium (44%), Iron (26%)',
-        'img': 'assets/images/workout_banner_1.png',
-      },
-      {
-        'id': 'FOOD-104',
-        'name': 'Greek Yogurt 0% Fat',
-        'category': 'Dairy & Eggs',
-        'serving': '100g',
-        'calories': '59 kcal',
-        'protein': '10.0g',
-        'carbs': '3.6g',
-        'fiber': '0.0g',
-        'fats': '0.4g',
-        'sugar': '3.2g',
-        'vitamins': 'Calcium (11%), Probiotics, Vitamin B12',
-        'img': 'assets/images/trainers_hero_banner.jpg',
-      },
-      {
-        'id': 'FOOD-105',
-        'name': 'Fresh Hass Avocado',
-        'category': 'Fruits',
-        'serving': '100g (1/2 Avocado)',
-        'calories': '160 kcal',
-        'protein': '2.0g',
-        'carbs': '8.5g',
-        'fiber': '6.7g',
-        'fats': '14.7g',
-        'sugar': '0.7g',
-        'vitamins': 'Monounsaturated Oleic Acid, Potassium (14%), Vitamin E',
-        'img': 'assets/images/hero_banner_4.png',
-      },
-      {
-        'id': 'FOOD-106',
-        'name': 'Wild Atlantic Salmon Fillet',
-        'category': 'Seafood',
-        'serving': '100g raw',
-        'calories': '208 kcal',
-        'protein': '20.4g',
-        'carbs': '0.0g',
-        'fiber': '0.0g',
-        'fats': '13.4g',
-        'sugar': '0g',
-        'vitamins': 'Omega-3 EPA/DHA (2.2g), Vitamin D (100%), Selenium',
-        'img': 'assets/images/workout_banner_1.png',
-      },
-    ];
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _save(Map<String, dynamic>? existing, Map<String, dynamic> body) async {
+    try {
+      if (existing == null) {
+        await Api.send('POST', '/foods', {...body, 'isActive': true, 'status': 'Active', 'source': 'NeuroFit'});
+      } else {
+        await Api.send('PUT', '/foods/${existing['id']}', body);
+      }
+      await _src.load();
+      _showSnackbar(existing == null ? 'Food item "${body['name']}" added with full nutrition facts!' : 'Food item "${body['name']}" updated.', const Color(0xFF3B82F6));
+    } catch (e) {
+      _showSnackbar('Could not save: $e', const Color(0xFFEF4444));
+    }
+  }
+
+  Future<void> _delete(Map<String, dynamic> f) async {
+    try {
+      await Api.send('DELETE', '/foods/${f['id']}');
+      await _src.load();
+      _showSnackbar('Food item deleted.', const Color(0xFFEF4444));
+    } catch (e) {
+      _showSnackbar('Could not delete: $e', const Color(0xFFEF4444));
+    }
   }
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -138,15 +113,16 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
     );
   }
 
-  void _showAddFoodItemDialog() {
-    final nameController = TextEditingController();
-    final servingController = TextEditingController(text: '100g');
-    final kcalController = TextEditingController(text: '120');
-    final pController = TextEditingController(text: '5');
-    final cController = TextEditingController(text: '20');
-    final fController = TextEditingController(text: '2');
-    final fiberController = TextEditingController(text: '3');
-    String selectedCat = 'Fruits';
+  void _showAddFoodItemDialog([Map<String, dynamic>? existing]) {
+    final e = existing ?? const <String, dynamic>{};
+    final nameController = TextEditingController(text: '${e['name'] ?? ''}');
+    final servingController = TextEditingController(text: '${e['servingSize'] ?? '100 g'}');
+    final kcalController = TextEditingController(text: existing == null ? '' : _num(e['calories']));
+    final pController = TextEditingController(text: existing == null ? '' : _num(e['protein']));
+    final cController = TextEditingController(text: existing == null ? '' : _num(e['carbs']));
+    final fController = TextEditingController(text: existing == null ? '' : _num(e['fat'] ?? e['fats']));
+    final fiberController = TextEditingController(text: existing == null ? '' : _num(e['fiber']));
+    String selectedCat = existing == null ? 'Fruits' : '${e['category'] ?? 'Fruits'}';
 
     showDialog(
       context: context,
@@ -248,25 +224,20 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
               onPressed: () {
                 final name = nameController.text.trim();
+                double n(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
                 if (name.isNotEmpty) {
-                  setState(() {
-                    _foodItemsList.insert(0, {
-                      'id': 'FOOD-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
-                      'name': name,
-                      'category': selectedCat,
-                      'serving': servingController.text.trim(),
-                      'calories': '${kcalController.text.trim()} kcal',
-                      'protein': '${pController.text.trim()}g',
-                      'carbs': '${cController.text.trim()}g',
-                      'fiber': '${fiberController.text.trim()}g',
-                      'fats': '${fController.text.trim()}g',
-                      'sugar': '2g',
-                      'vitamins': 'Vitamins & Minerals profile verified',
-                      'img': 'assets/images/workout_banner_1.png',
-                    });
-                  });
                   Navigator.pop(ctx);
-                  _showSnackbar('Food item "$name" added with full nutrition facts!', const Color(0xFF3B82F6));
+                  _save(existing, {
+                    'name': name,
+                    'title': name,
+                    'category': selectedCat,
+                    'servingSize': servingController.text.trim(),
+                    'calories': n(kcalController).round(),
+                    'protein': n(pController),
+                    'carbs': n(cController),
+                    'fat': n(fController),
+                    'fiber': n(fiberController),
+                  });
                 }
               },
               child: const Text('Save Food Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
@@ -316,7 +287,7 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.asset(f['img'] as String, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.restaurant, size: 36))),
+                ClipRRect(borderRadius: BorderRadius.circular(14), child: NetOrAssetImage(f['img'] as String, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.restaurant, size: 36))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -387,7 +358,7 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     onPressed: () {
                       Navigator.pop(context);
-                      _showSnackbar('Edit food item opened.', const Color(0xFF3B82F6));
+                      _showAddFoodItemDialog(f);
                     },
                     icon: const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
                     label: const Text('Edit Food', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -399,8 +370,7 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     onPressed: () {
                       Navigator.pop(context);
-                      setState(() => _foodItemsList.removeWhere((item) => item['id'] == f['id']));
-                      _showSnackbar('Food item deleted.', const Color(0xFFEF4444));
+                      _delete(f);
                     },
                     icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Colors.white),
                     label: const Text('Delete Food', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -444,11 +414,17 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
   }
 
   Widget _buildKpiCarousel() {
+    final items = _src.items;
+    final cats = {for (final f in items) '${f['category'] ?? 'Other'}'};
+    final complete = items.where((f) => (f['calories'] ?? 0) != 0 && f['protein'] != null && f['carbs'] != null).length;
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final added = items.where((f) => DateTime.tryParse('${f['createdAt'] ?? ''}')?.isAfter(weekAgo) ?? false).length;
+    final top = [...items]..sort((a, b) => ((b['protein'] as num? ?? 0)).compareTo(a['protein'] as num? ?? 0));
     final kpis = [
-      {'title': 'Food Items', 'val': '1,280', 'growth': '+42 Verified Foods', 'icon': Icons.kitchen_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'FDA Verified', 'val': '98.5%', 'growth': 'Macro database SLA', 'icon': Icons.verified_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Food Categories', 'val': '7 Groups', 'growth': 'Whole foods & snacks', 'icon': Icons.category_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Top Search', 'val': 'Red Apple', 'growth': '76.1K queries', 'icon': Icons.trending_up_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Food Items', 'val': fmtInt(items.length), 'growth': '+$added added this week', 'icon': Icons.kitchen_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Full Macros', 'val': fmtPct(items.isEmpty ? 0 : complete / items.length * 100), 'growth': 'Calories, protein & carbs set', 'icon': Icons.verified_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Food Categories', 'val': '${cats.length} Groups', 'growth': 'Plus live search in the app', 'icon': Icons.category_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Top Protein', 'val': top.isEmpty ? '-' : '${top.first['name']}', 'growth': top.isEmpty ? 'Add foods to see' : '${_num(top.first['protein'])}g protein', 'icon': Icons.trending_up_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
     ];
 
     return SingleChildScrollView(
@@ -563,7 +539,7 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
 
   Widget _buildFoodItemsGrid() {
     final filtered = _foodItemsList.where((f) {
-      if (_selectedCatIndex > 0) {
+      if (_selectedCatIndex > 0 && _selectedCatIndex < _foodCategories.length) {
         final cat = _foodCategories[_selectedCatIndex];
         if (f['category'] != cat) return false;
       }
@@ -608,7 +584,7 @@ class _NutritionFoodItemsViewState extends State<NutritionFoodItemsView> {
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                child: Image.asset(
+                child: NetOrAssetImage(
                   f['img'] as String,
                   height: 90,
                   width: double.infinity,

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import 'net_or_asset_image.dart';
 
 class NutritionRecipesView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,97 +23,74 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
   int _selectedCatIndex = 0;
   String _searchQuery = '';
 
-  final List<String> _recipeCategories = ['All Recipes', 'Breakfast', 'High Protein', 'Keto', 'Vegan', 'Pre-Workout'];
+  List<String> get _recipeCategories => ['All Recipes', ...{..._defaultCats, for (final r in _src.items) '${r['category'] ?? 'Other'}'}];
+  static const _defaultCats = ['Breakfast', 'High Protein', 'Keto', 'Vegan', 'Pre-Workout'];
 
-  late List<Map<String, dynamic>> _recipesList;
+  final AdminList _src = AdminList.of('/recipes?limit=2000');
+
+  static double _d(dynamic v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}'.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+  static String _n(dynamic v) { final d = _d(v); return d == d.roundToDouble() ? d.toInt().toString() : d.toStringAsFixed(1); }
+
+  static Map<String, dynamic> _row(Map<String, dynamic> r) {
+    final prep = r['prepTime'] ?? r['prepTimeMinutes'] ?? r['readyInMinutes'];
+    return {
+      ...r,
+      'id': r['id'],
+      'title': '${r['title'] ?? r['name'] ?? 'Recipe'}',
+      'category': '${r['category'] ?? 'Other'}',
+      'prepTime': prep == null ? '-' : (prep is num ? '$prep mins' : '$prep'),
+      'calories': '${_n(r['calories'])} kcal',
+      'protein': '${_n(r['protein'])}g P',
+      'carbs': '${_n(r['carbs'])}g C',
+      'fats': '${_n(r['fat'] ?? r['fats'])}g F',
+      'difficulty': '${r['difficulty'] ?? 'Easy'}',
+      'rating': r['rating'] == null ? 'New' : '${r['rating']} ★',
+      'tag': r['isFeatured'] == true ? '🔥 Featured' : '${r['category'] ?? ''}',
+      'img': '${r['imageUrl'] ?? r['image'] ?? ''}',
+      'ingredients': [for (final x in (r['ingredients'] as List? ?? const [])) x is Map ? '${x['amount'] ?? ''} ${x['name'] ?? ''}'.trim() : '$x'],
+      'steps': [for (final x in (r['steps'] as List? ?? r['instructions'] as List? ?? const [])) '$x'],
+    };
+  }
+
+  List<Map<String, dynamic>> get _recipesList => [for (final r in _src.items) _row(r)];
+
+  void _changed() { if (mounted) setState(() {}); }
 
   @override
   void initState() {
     super.initState();
+    _src.addListener(_changed);
+    _src.load();
+  }
 
-    _recipesList = [
-      {
-        'id': 'REC-101',
-        'title': 'High-Protein Blueberry Whey Oatmeal',
-        'category': 'Breakfast',
-        'prepTime': '10 mins',
-        'calories': '420 kcal',
-        'protein': '38g P',
-        'carbs': '52g C',
-        'fats': '7g F',
-        'difficulty': 'Easy',
-        'rating': '4.9 ★',
-        'tag': '🔥 Breakfast Favorite',
-        'img': 'assets/images/hero_banner_1.png',
-        'ingredients': ['60g Rolled Oats', '1 Scoop Vanilla Whey Protein', '100g Fresh Blueberries', '150ml Unsweetened Almond Milk', '10g Chia Seeds'],
-        'steps': [
-          'Boil almond milk and add rolled oats on medium heat for 4 minutes.',
-          'Remove from heat and let cool for 60 seconds.',
-          'Stir in whey protein powder until completely smooth.',
-          'Top with fresh blueberries and chia seeds.',
-        ],
-      },
-      {
-        'id': 'REC-102',
-        'title': 'Lemon Herb Grilled Chicken with Quinoa',
-        'category': 'High Protein',
-        'prepTime': '25 mins',
-        'calories': '540 kcal',
-        'protein': '55g P',
-        'carbs': '45g C',
-        'fats': '12g F',
-        'difficulty': 'Intermediate',
-        'rating': '4.8 ★',
-        'tag': 'Muscle Builder',
-        'img': 'assets/images/athlete_transform_1787825621309.jpg',
-        'ingredients': ['220g Boneless Chicken Breast', '80g Cooked Organic Quinoa', '100g Steamed Broccoli', '1 tbsp Extra Virgin Olive Oil', 'Fresh Lemon Juice & Rosemary'],
-        'steps': [
-          'Marinate chicken breast in lemon juice, rosemary, and olive oil for 15 mins.',
-          'Grill on medium-high heat for 6-7 minutes per side.',
-          'Serve sliced over warm fluffy quinoa with steamed broccoli florets.',
-        ],
-      },
-      {
-        'id': 'REC-103',
-        'title': 'Avocado & Egg Salad with Sourdough',
-        'category': 'Keto',
-        'prepTime': '15 mins',
-        'calories': '460 kcal',
-        'protein': '24g P',
-        'carbs': '28g C',
-        'fats': '28g F',
-        'difficulty': 'Easy',
-        'rating': '4.9 ★',
-        'tag': 'Healthy Fats',
-        'img': 'assets/images/trainers_hero_banner.jpg',
-        'ingredients': ['2 Large Hard-Boiled Eggs', '1 Whole Ripe Avocado', '1 Slice Toasted Sourdough', '1 tsp Lemon Juice', 'Chili Flakes & Sea Salt'],
-        'steps': [
-          'Mash avocado with lemon juice, salt, and chili flakes in a bowl.',
-          'Chop hard-boiled eggs and fold gently into avocado mash.',
-          'Spread generously onto warm toasted sourdough slice.',
-        ],
-      },
-      {
-        'id': 'REC-104',
-        'title': 'Tofu & Edamame Teriyaki Power Bowl',
-        'category': 'Vegan',
-        'prepTime': '20 mins',
-        'calories': '480 kcal',
-        'protein': '32g P',
-        'carbs': '58g C',
-        'fats': '14g F',
-        'difficulty': 'Intermediate',
-        'rating': '4.7 ★',
-        'tag': 'Plant Power',
-        'img': 'assets/images/workout_banner_1.png',
-        'ingredients': ['180g Extra Firm Tofu', '80g Shelled Edamame', '100g Jasmine Brown Rice', '2 tbsp Low-Sodium Teriyaki Glaze', 'Sesame Seeds'],
-        'steps': [
-          'Press tofu and pan-sear cubes until golden crispy.',
-          'Toss tofu and edamame in teriyaki glaze over medium heat.',
-          'Layer over warm brown rice and garnish with toasted sesame seeds.',
-        ],
-      },
-    ];
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _save(Map<String, dynamic>? existing, Map<String, dynamic> body) async {
+    try {
+      if (existing == null) {
+        await Api.send('POST', '/recipes', {...body, 'isActive': true, 'status': 'Active', 'ingredients': [], 'steps': []});
+      } else {
+        await Api.send('PUT', '/recipes/${existing['id']}', body);
+      }
+      await _src.load();
+      _showSnackbar(existing == null ? 'Recipe "${body['title']}" published!' : 'Recipe "${body['title']}" updated.', const Color(0xFF10B981));
+    } catch (e) {
+      _showSnackbar('Could not save: $e', const Color(0xFFEF4444));
+    }
+  }
+
+  Future<void> _delete(Map<String, dynamic> r) async {
+    try {
+      await Api.send('DELETE', '/recipes/${r['id']}');
+      await _src.load();
+      _showSnackbar('Recipe deleted.', const Color(0xFFEF4444));
+    } catch (e) {
+      _showSnackbar('Could not delete: $e', const Color(0xFFEF4444));
+    }
   }
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -135,11 +115,12 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
     );
   }
 
-  void _showAddRecipeDialog() {
-    final titleController = TextEditingController();
-    final kcalController = TextEditingController(text: '450');
-    final pController = TextEditingController(text: '35g');
-    String selectedCat = 'High Protein';
+  void _showAddRecipeDialog([Map<String, dynamic>? existing]) {
+    final e = existing ?? const <String, dynamic>{};
+    final titleController = TextEditingController(text: '${e['title'] ?? e['name'] ?? ''}');
+    final kcalController = TextEditingController(text: existing == null ? '' : _n(e['calories']));
+    final pController = TextEditingController(text: existing == null ? '' : _n(e['protein']));
+    String selectedCat = existing == null ? 'High Protein' : '${e['category'] ?? 'High Protein'}';
 
     showDialog(
       context: context,
@@ -230,26 +211,8 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
               onPressed: () {
                 final title = titleController.text.trim();
                 if (title.isNotEmpty) {
-                  setState(() {
-                    _recipesList.insert(0, {
-                      'id': 'REC-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
-                      'title': title,
-                      'category': selectedCat,
-                      'prepTime': '20 mins',
-                      'calories': '${kcalController.text.trim()} kcal',
-                      'protein': pController.text.trim(),
-                      'carbs': '45g C',
-                      'fats': '12g F',
-                      'difficulty': 'Easy',
-                      'rating': '5.0 ★',
-                      'tag': 'New Recipe',
-                      'img': 'assets/images/workout_banner_1.png',
-                      'ingredients': ['Primary Ingredient 150g', 'Seasoning & Herbs', 'Olive Oil 1 tbsp'],
-                      'steps': ['Preheat pan/oven.', 'Combine ingredients and cook for 15 minutes.'],
-                    });
-                  });
                   Navigator.pop(ctx);
-                  _showSnackbar('Recipe "$title" published!', const Color(0xFF10B981));
+                  _save(existing, {'title': title, 'name': title, 'category': selectedCat, 'calories': _d(kcalController.text).round(), 'protein': _d(pController.text)});
                 }
               },
               child: const Text('Publish Recipe', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
@@ -287,7 +250,7 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.asset(r['img'] as String, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.soup_kitchen, size: 36))),
+                ClipRRect(borderRadius: BorderRadius.circular(14), child: NetOrAssetImage(r['img'] as String, width: 64, height: 64, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.soup_kitchen, size: 36))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -371,7 +334,7 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     onPressed: () {
                       Navigator.pop(context);
-                      _showSnackbar('Edit recipe opened.', const Color(0xFF3B82F6));
+                      _showAddRecipeDialog(r);
                     },
                     icon: const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
                     label: const Text('Edit Recipe', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -383,8 +346,7 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                     onPressed: () {
                       Navigator.pop(context);
-                      setState(() => _recipesList.removeWhere((item) => item['id'] == r['id']));
-                      _showSnackbar('Recipe deleted.', const Color(0xFFEF4444));
+                      _delete(r);
                     },
                     icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Colors.white),
                     label: const Text('Delete Recipe', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -431,11 +393,17 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
   }
 
   Widget _buildKpiCarousel() {
+    final items = _src.items;
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final added = items.where((r) => DateTime.tryParse('${r['createdAt'] ?? ''}')?.isAfter(weekAgo) ?? false).length;
+    final hp = items.where((r) => _d(r['protein']) >= 25).length;
+    final keto = items.where((r) => _d(r['carbs']) <= 20 || '${r['category']}'.toLowerCase().contains('keto')).length;
+    final preps = [for (final r in items) if (r['prepTime'] is num) (r['prepTime'] as num).toDouble()];
     final kpis = [
-      {'title': 'Total Recipes', 'val': '248', 'growth': '+14 New recipes', 'icon': Icons.menu_book_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'High-Protein', 'val': '124', 'growth': '50% of database', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Keto & Low Carb', 'val': '68', 'growth': 'Popular filters', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Avg Prep Time', 'val': '18 mins', 'growth': 'Quick & Easy', 'icon': Icons.timer_outlined, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Total Recipes', 'val': fmtInt(items.length), 'growth': '+$added New recipes', 'icon': Icons.menu_book_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'High-Protein', 'val': fmtInt(hp), 'growth': '${fmtPct(items.isEmpty ? 0 : hp / items.length * 100)} of database', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Keto & Low Carb', 'val': fmtInt(keto), 'growth': '20g carbs or less', 'icon': Icons.local_fire_department_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Avg Prep Time', 'val': preps.isEmpty ? '-' : '${(preps.reduce((a, b) => a + b) / preps.length).round()} mins', 'growth': 'Across all recipes', 'icon': Icons.timer_outlined, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
     ];
 
     return SingleChildScrollView(
@@ -550,7 +518,7 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
 
   Widget _buildRecipesGrid() {
     final filtered = _recipesList.where((r) {
-      if (_selectedCatIndex > 0) {
+      if (_selectedCatIndex > 0 && _selectedCatIndex < _recipeCategories.length) {
         final cat = _recipeCategories[_selectedCatIndex];
         if (r['category'] != cat) return false;
       }
@@ -595,7 +563,7 @@ class _NutritionRecipesViewState extends State<NutritionRecipesView> {
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                child: Image.asset(
+                child: NetOrAssetImage(
                   r['img'] as String,
                   height: 90,
                   width: double.infinity,
