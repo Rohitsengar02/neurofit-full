@@ -207,6 +207,8 @@ class BannersBackendService extends ChangeNotifier {
   List<BannerModel> get banners => List.unmodifiable(_banners);
 
   void _initSocket() {
+    // Demo build: no live server to listen to.
+    if (ApiConstants.demoMode) return;
     try {
       final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(

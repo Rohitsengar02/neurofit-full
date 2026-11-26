@@ -49,6 +49,8 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
   }
 
   void _initSocket() {
+    // Demo build: no live server to listen to.
+    if (ApiConstants.demoMode) return;
     try {
       final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
@@ -343,7 +345,7 @@ class _MarketplaceAnalyticsViewState extends State<MarketplaceAnalyticsView> {
                   const SizedBox(
                     width: 230,
                     child: Text(
-                      'Real-time insights from MongoDB Atlas orders, products catalog and customer metrics.',
+                      'Insights from orders, the product catalog and customer metrics.',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B), height: 1.3),
                     ),
                   ),

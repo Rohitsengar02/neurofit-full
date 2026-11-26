@@ -211,7 +211,8 @@ class CategoryBackendService extends ChangeNotifier {
 
   static const String r2AccountId = '61519b8c6a1a20d3535eb39e85687539';
   static const String r2BucketName = 'neurofit';
-  static const String r2ApiToken = 'cfat_CUzcTemF5447Ag5mi2gIrcDGYyrMrHSrO9PY6q5Sc69f5185';
+  // Never ship this token in the web build. Pass it with --dart-define if needed.
+  static const String r2ApiToken = String.fromEnvironment('R2_API_TOKEN');
   static const String r2PublicDevUrl = 'https://pub-2faf8f45ef6f42afba49f3944feacff6.r2.dev';
 
   static String getDisplayableImageUrl(String url) {
@@ -223,6 +224,10 @@ class CategoryBackendService extends ChangeNotifier {
     }
 
     final trimmed = url.trim();
+
+    // Demo build: there is no backend media proxy, so load Cloudflare R2
+    // and other images straight from their public URLs.
+    if (ApiConstants.demoMode) return trimmed;
 
     // 2. Handle Cloudflare R2 images & local upload filenames:
     if (trimmed.contains('r2.dev') ||

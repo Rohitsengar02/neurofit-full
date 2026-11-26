@@ -29,8 +29,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
   void _autoFillAdminCredentials() {
     HapticFeedback.mediumImpact();
-    _emailController.text = 'rohitsengar02@gmail.com';
-    _passwordController.text = 'RUdra@602';
+    _emailController.text = ApiConstants.demoAdminEmail;
+    _passwordController.text = ApiConstants.demoAdminPassword;
     setState(() {
       _errorMessage = null;
     });
@@ -42,7 +42,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             const Icon(Icons.bolt_rounded, color: Color(0xFF22C55E), size: 20),
             const SizedBox(width: 10),
             Text(
-              'SuperAdmin credentials autofilled!',
+              'Demo admin credentials filled in',
               style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
             ),
           ],
@@ -54,6 +54,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<bool> _verifyAdminWithBackend(String email, String password) async {
+    if (ApiConstants.demoMode) {
+      // Demo build: no backend or database. Only the demo admin can sign in.
+      return email.trim().toLowerCase() == ApiConstants.demoAdminEmail &&
+          password == ApiConstants.demoAdminPassword;
+    }
+
     final urls = [
       '${ApiConstants.apiBaseUrl}/admin/login',
       ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/admin/login'),
@@ -77,8 +83,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       } catch (_) {}
     }
 
-    // Direct match against seeded admin credentials
-    return (email.trim().toLowerCase() == 'rohitsengar02@gmail.com' && password == 'RUdra@602');
+    return false;
   }
 
   Future<void> _handleLogin() async {
@@ -197,7 +202,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'MongoDB Atlas Enterprise Command Center',
+                          ApiConstants.demoMode
+                              ? 'Demo mode · sample data, nothing is saved'
+                              : 'MongoDB Atlas Enterprise Command Center',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -334,7 +341,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           const Icon(Icons.bolt_rounded, color: Color(0xFF22C55E), size: 18),
                           const SizedBox(width: 8),
                           Text(
-                            '⚡ AUTOFILL ADMIN CREDENTIALS',
+                            'USE DEMO ADMIN LOGIN',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               fontWeight: FontWeight.w800,

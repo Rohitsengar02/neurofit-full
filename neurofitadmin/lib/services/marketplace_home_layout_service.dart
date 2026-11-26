@@ -213,6 +213,8 @@ class MarketplaceHomeLayoutService extends ChangeNotifier {
   List<LayoutSectionModel> get activeSections => _sections.where((s) => s.isActive).toList();
 
   void _initSocket() {
+    // Demo build: no live server to listen to.
+    if (ApiConstants.demoMode) return;
     try {
       final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(

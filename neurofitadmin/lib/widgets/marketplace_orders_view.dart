@@ -54,6 +54,8 @@ class _MarketplaceOrdersViewState extends State<MarketplaceOrdersView> {
   }
 
   void _initSocket() {
+    // Demo build: no live server to listen to.
+    if (ApiConstants.demoMode) return;
     try {
       final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(
