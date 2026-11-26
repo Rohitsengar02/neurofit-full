@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-class UserAnalyticsView extends StatelessWidget {
+class UserAnalyticsView extends StatefulWidget {
   final String selectedDateRange;
   final List<Animation<double>> fadeAnimations;
   final List<Animation<Offset>> slideAnimations;
@@ -12,6 +13,35 @@ class UserAnalyticsView extends StatelessWidget {
     required this.fadeAnimations,
     required this.slideAnimations,
   });
+
+  @override
+  State<UserAnalyticsView> createState() => _UserAnalyticsViewState();
+}
+
+class _UserAnalyticsViewState extends State<UserAnalyticsView> with LiveStats {
+  String get selectedDateRange => widget.selectedDateRange;
+  List<Animation<double>> get fadeAnimations => widget.fadeAnimations;
+  List<Animation<Offset>> get slideAnimations => widget.slideAnimations;
+
+  List<FlSpot> _spots(List<double> v) => [for (var i = 0; i < v.length; i++) FlSpot(i.toDouble(), v[i])];
+  double get _growthMax => top([...st.series('signups', 7), ...st.series('active', 7)]);
+  double _ret(String k) => ((ins.sub('users', 'retention')[k] as num?) ?? 0).toDouble();
+  List<Map<String, dynamic>> get _gender => [for (final x in (st.sec('demographics')['gender'] as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
+  List<Map<String, dynamic>> get _platforms => ins.list('users', 'platforms');
+  Map<String, dynamic> get _sess => ins.sub('users', 'sessions');
+  double _pct(List<Map<String, dynamic>> rows, List<String> labels) {
+    final total = rows.fold<num>(0, (a, r) => a + ((r['n'] as num?) ?? 0));
+    final part = labels.fold<double>(0, (a, l) => a + labelValue(rows, l));
+    return total == 0 ? 0 : part / total * 100;
+  }
+  double get _otherGenderPct => _pct(_gender, ['Other', 'Not set']);
+  double get _platformOtherPct => _pct(_platforms, ['Web', 'Unknown']);
+  String _topOf(dynamic rows, String suffix) {
+    final l = [for (final x in (rows as List? ?? const [])) Map<String, dynamic>.from(x as Map)];
+    if (l.isEmpty) return 'Not enough data';
+    final total = l.fold<num>(0, (a, r) => a + ((r['n'] as num?) ?? 0));
+    return '${l.first['label']}$suffix (${share(l.first['n'] as num? ?? 0, total)})';
+  }
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < fadeAnimations.length ? index : fadeAnimations.length - 1;
@@ -171,11 +201,11 @@ class UserAnalyticsView extends StatelessWidget {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      _buildHeroStat('14,489', 'New Users (↑18.6%)', const Color(0xFF10B981)),
+                      _buildHeroStat(fmtInt(st.n('users', 'new_30d')), 'New Users (${st.growthUp('signups') ? '↑' : '↓'}${st.growth('signups').abs().toStringAsFixed(1)}%)', const Color(0xFF10B981)),
                       const SizedBox(width: 14),
-                      _buildHeroStat('23,456', 'Active Users', const Color(0xFF8B5CF6)),
+                      _buildHeroStat(fmtInt(st.n('users', 'mau')), 'Active Users', const Color(0xFF8B5CF6)),
                       const SizedBox(width: 14),
-                      _buildHeroStat('24m 18s', 'Avg. Session', const Color(0xFF3B82F6)),
+                      _buildHeroStat(fmtDuration(ins.sub('users', 'sessions')['avgSeconds'] as num? ?? 0), 'Avg. Session', const Color(0xFF3B82F6)),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -226,10 +256,10 @@ class UserAnalyticsView extends StatelessWidget {
   // 2. TOP 4 KPI CARDS
   Widget _buildTopKpisSection() {
     final kpis = [
-      {'title': 'Total Users', 'val': '52,689', 'growth': '18.6% vs last 7 days', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Active Users', 'val': '23,456', 'growth': '12.4% vs last 7 days', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'New Users', 'val': '4,321', 'growth': '14.3% vs last 7 days', 'icon': Icons.person_add_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Returning Users', 'val': '19,135', 'growth': '15.7% vs last 7 days', 'icon': Icons.replay_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Users', 'val': fmtInt(st.n('users', 'total')), 'growth': st.growthLabel('signups'), 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Active Users', 'val': fmtInt(st.n('users', 'wau')), 'growth': st.growthLabel('active'), 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'New Users', 'val': fmtInt(st.n('users', 'new_7d')), 'growth': st.growthLabel('signups'), 'icon': Icons.person_add_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Returning Users', 'val': fmtInt(ins.n('users', 'returning')), 'growth': 'active this week, joined earlier', 'icon': Icons.replay_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return GridView.builder(
@@ -310,15 +340,15 @@ class UserAnalyticsView extends StatelessWidget {
             height: 170,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: _growthMax / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 100, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: _growthMax / 4, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = dayLabels(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -334,10 +364,10 @@ class UserAnalyticsView extends StatelessWidget {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 450,
+                maxY: _growthMax,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 160), FlSpot(1, 280), FlSpot(2, 220), FlSpot(3, 310), FlSpot(4, 210), FlSpot(5, 270), FlSpot(6, 340)],
+                    spots: _spots(st.series('signups', 7)),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -345,7 +375,7 @@ class UserAnalyticsView extends StatelessWidget {
                     dotData: const FlDotData(show: true),
                   ),
                   LineChartBarData(
-                    spots: const [FlSpot(0, 70), FlSpot(1, 120), FlSpot(2, 90), FlSpot(3, 130), FlSpot(4, 170), FlSpot(5, 150), FlSpot(6, 190)],
+                    spots: _spots(st.series('active', 7)),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF3B82F6),
@@ -407,7 +437,7 @@ class UserAnalyticsView extends StatelessWidget {
                 maxY: 100,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 100), FlSpot(1, 68.9), FlSpot(2, 48.7), FlSpot(3, 22.1)],
+                    spots: [FlSpot(0, _ret('d1')), FlSpot(1, _ret('d7')), FlSpot(2, _ret('d14')), FlSpot(3, _ret('d30'))],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -428,11 +458,11 @@ class UserAnalyticsView extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: const [
-              _RetentionTag('Day 1', '68.9%'),
-              _RetentionTag('Day 7', '48.7%'),
-              _RetentionTag('Day 14', '34.5%'),
-              _RetentionTag('Day 30', '22.1%'),
+            children: [
+              _RetentionTag('Day 1', fmtPct(_ret('d1'))),
+              _RetentionTag('Day 7', fmtPct(_ret('d7'))),
+              _RetentionTag('Day 14', fmtPct(_ret('d14'))),
+              _RetentionTag('Day 30', fmtPct(_ret('d30'))),
             ],
           ),
         ],
@@ -464,17 +494,17 @@ class UserAnalyticsView extends StatelessWidget {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF65D300), value: 60.1, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 36.4, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 3.5, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF65D300), value: labelValue(_gender, 'Male'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: labelValue(_gender, 'Female'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: labelValue(_gender, 'Other') + labelValue(_gender, 'Not set') + (_gender.isEmpty ? 1 : 0), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('52,689', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Users', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(st.n('users', 'total')), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Users', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -484,11 +514,11 @@ class UserAnalyticsView extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF65D300), 'Male', '60.1%'),
+                    _buildDemographicRow(const Color(0xFF65D300), 'Male', labelShare(_gender, 'Male')),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Female', '36.4%'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Female', labelShare(_gender, 'Female')),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other', '3.5%'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other / not set', fmtPct(_otherGenderPct)),
                   ],
                 ),
               ),
@@ -497,9 +527,9 @@ class UserAnalyticsView extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _buildDemographicFooterCard(Icons.person_pin_circle_outlined, 'Top Age Group', '25-34 Years (64.2%)')),
+              Expanded(child: _buildDemographicFooterCard(Icons.person_pin_circle_outlined, 'Top Age Group', _topOf(st.sec('demographics')['ages'], ' Years'))),
               const SizedBox(width: 10),
-              Expanded(child: _buildDemographicFooterCard(Icons.public_rounded, 'Top Location', 'India (78.6%)')),
+              Expanded(child: _buildDemographicFooterCard(Icons.public_rounded, 'Top Location', _topOf(st.sec('demographics')['cities'], ''))),
             ],
           ),
         ],
@@ -548,14 +578,14 @@ class UserAnalyticsView extends StatelessWidget {
   // 4. USER ACTIVITY HEATMAP
   Widget _buildUserActivityHeatmapSection() {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final raw = [for (final row in (ins.sec('users')['heatmap'] as List? ?? const [])) [for (final v in (row as List)) (v as num).toDouble()]];
+    final peak = raw.expand((r) => r).fold<double>(0, (a, b) => b > a ? b : a);
     final intensities = [
-      [1, 2, 3, 4, 3, 2, 1],
-      [2, 3, 4, 5, 4, 3, 2],
-      [1, 2, 4, 5, 5, 4, 2],
-      [2, 3, 4, 5, 4, 3, 1],
-      [3, 4, 5, 5, 4, 3, 2],
-      [2, 3, 5, 5, 5, 4, 3],
-      [1, 2, 4, 4, 3, 2, 1],
+      for (var d = 0; d < 7; d++)
+        [for (var h = 0; h < 7; h++) () {
+          final v = d < raw.length && h < raw[d].length ? raw[d][h] : 0.0;
+          return peak == 0 ? 1 : (1 + (v / peak * 4).round()).clamp(1, 5);
+        }()]
     ];
 
     Color getHeatColor(int val) {
@@ -578,7 +608,7 @@ class UserAnalyticsView extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('4. User Activity Heatmap', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-              _buildDropdownPill('Last 7 Days'),
+              _buildDropdownPill('Last 30 Days'),
             ],
           ),
           const SizedBox(height: 14),
@@ -652,16 +682,16 @@ class UserAnalyticsView extends StatelessWidget {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 67.9, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 28.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 3.4, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: labelValue(_platforms, 'Android'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: labelValue(_platforms, 'iOS'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: labelValue(_platforms, 'Web') + labelValue(_platforms, 'Unknown') + (_platforms.isEmpty ? 1 : 0), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('52,689', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      children: [
+                        Text(fmtInt(st.n('users', 'total')), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
                         Text('Total Users', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
@@ -672,11 +702,11 @@ class UserAnalyticsView extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Android', '67.9%'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Android', labelShare(_platforms, 'Android')),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'iOS', '28.7%'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'iOS', labelShare(_platforms, 'iOS')),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Web', '3.4%'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Web / other', fmtPct(_platformOtherPct)),
                   ],
                 ),
               ),
@@ -690,10 +720,10 @@ class UserAnalyticsView extends StatelessWidget {
   // 6. USER ENGAGEMENT OVERVIEW
   Widget _buildUserEngagementOverviewSection() {
     final engagements = [
-      {'title': 'Avg. Session Time', 'val': '24m 18s', 'growth': '+8.8%', 'icon': Icons.timer_outlined, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Sessions per User', 'val': '3.7', 'growth': '+11.2%', 'icon': Icons.touch_app_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Screens per Session', 'val': '5.8', 'growth': '+6.1%', 'icon': Icons.smartphone_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Bounce Rate', 'val': '28.4%', 'growth': '-4.2%', 'icon': Icons.exit_to_app_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Avg. Session Time', 'val': fmtDuration(_sess['avgSeconds'] as num? ?? 0), 'growth': '${fmtInt(_sess['total'] as num? ?? 0)} sessions', 'icon': Icons.timer_outlined, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Sessions per User', 'val': '${_sess['perUser'] ?? 0}', 'growth': '30 days', 'icon': Icons.touch_app_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Screens per Session', 'val': '${_sess['screensPerSession'] ?? 0}', 'growth': '30 days', 'icon': Icons.smartphone_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Bounce Rate', 'val': fmtPct(_sess['bounceRate'] as num? ?? 0), 'growth': 'under 10 s', 'icon': Icons.exit_to_app_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
     ];
 
     return Container(
@@ -757,12 +787,20 @@ class UserAnalyticsView extends StatelessWidget {
 
   // 7. TOP USER SEGMENTS
   Widget _buildTopUserSegmentsSection() {
+    const icons = [Icons.monitor_weight_outlined, Icons.fitness_center_rounded, Icons.directions_run_rounded, Icons.self_improvement_rounded, Icons.emoji_events_rounded, Icons.flag_rounded];
+    const colors = [Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF65D300), Color(0xFF8B5CF6), Color(0xFFF97316), Color(0xFF06B6D4)];
+    final goals = ins.list('users', 'goals');
+    final totalUsers = st.n('users', 'total');
     final segments = [
-      {'title': 'Weight Loss', 'users': '18,450', 'pct': '35.0%', 'trend': '+14.2%', 'icon': Icons.monitor_weight_outlined, 'color': const Color(0xFF10B981)},
-      {'title': 'Muscle Building', 'users': '14,200', 'pct': '27.0%', 'trend': '+18.4%', 'icon': Icons.fitness_center_rounded, 'color': const Color(0xFF3B82F6)},
-      {'title': 'General Fitness', 'users': '9,870', 'pct': '18.7%', 'trend': '+11.8%', 'icon': Icons.directions_run_rounded, 'color': const Color(0xFF65D300)},
-      {'title': 'Yoga & Mindfulness', 'users': '6,550', 'pct': '12.4%', 'trend': '+9.3%', 'icon': Icons.self_improvement_rounded, 'color': const Color(0xFF8B5CF6)},
-      {'title': 'Athletes', 'users': '3,619', 'pct': '6.9%', 'trend': '+7.4%', 'icon': Icons.emoji_events_rounded, 'color': const Color(0xFFF97316)},
+      for (var i = 0; i < goals.length; i++)
+        {
+          'title': '${goals[i]['goal']}',
+          'users': fmtInt(goals[i]['n'] as num? ?? 0),
+          'pct': share(goals[i]['n'] as num? ?? 0, totalUsers),
+          'trend': '+${goals[i]['new7'] ?? 0} this week',
+          'icon': icons[i % icons.length],
+          'color': colors[i % colors.length],
+        },
     ];
 
     return Container(
@@ -813,11 +851,8 @@ class UserAnalyticsView extends StatelessWidget {
   // 8. RECENT USER SIGNUPS
   Widget _buildRecentUserSignupsSection() {
     final signups = [
-      {'name': 'Rahul Sharma', 'email': 'rahul.s@gmail.com', 'time': '2 min ago', 'img': 'assets/images/trainers_hero_banner.jpg'},
-      {'name': 'Priya Patel', 'email': 'priya.patel@gmail.com', 'time': '5 min ago', 'img': 'assets/images/athlete_transform_1787825621309.jpg'},
-      {'name': 'Amit Sharma', 'email': 'amit.sharma@gmail.com', 'time': '12 min ago', 'img': 'assets/images/hero_banner_4.png'},
-      {'name': 'Neha Singh', 'email': 'neha.singh@gmail.com', 'time': '18 min ago', 'img': 'assets/images/hero_banner_1.png'},
-      {'name': 'Kavita Verma', 'email': 'kavita.verma@gmail.com', 'time': '25 min ago', 'img': 'assets/images/workout_banner_1.png'},
+      for (final r in st.rows('recentActivity'))
+        if (r['kind'] == 'user') {'name': '${r['title'] ?? 'User'}', 'email': '${r['detail'] ?? ''}', 'time': timeAgo(r['at']?.toString()), 'img': ''},
     ];
 
     return Container(

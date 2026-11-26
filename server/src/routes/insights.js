@@ -36,7 +36,7 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
     retention, platforms, heat, sessions, returning, goalsNew, signups90,
     rev, revDaily, revMonthly, payMethods, byUserType, plans, orderCats, cities, aov, refunds, orderDaily,
     trainerStatus, trainerCats, ratingBuckets, topTrainers, trainerGrowth, liveDaily, earnDaily, payout,
-    fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily,
+    fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily, txns,
   ] = await Promise.all([
     // ---------- users ----------
     one(`SELECT
@@ -49,7 +49,7 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
                       WHEN lower(COALESCE(profile->>'platform','')) IN ('ios','iphone','ipad') THEN 'iOS'
                       WHEN lower(COALESCE(profile->>'platform','')) = 'web' THEN 'Web' ELSE 'Unknown' END AS label, count(*)::int AS n
           FROM users WHERE ${NOT_ADMIN} GROUP BY 1 ORDER BY 2 DESC`),
-    rows(`SELECT extract(isodow FROM client_updated_at)::int AS dow, (extract(hour FROM client_updated_at AT TIME ZONE 'Asia/Kolkata')::int / 4) AS slot, count(*)::int AS n
+    rows(`SELECT extract(isodow FROM client_updated_at)::int AS dow, (extract(hour FROM client_updated_at AT TIME ZONE 'Asia/Kolkata')::int * 7 / 24) AS slot, count(*)::int AS n
           FROM user_records WHERE client_updated_at > now() - interval '30 days' GROUP BY 1, 2`),
     one(`SELECT COALESCE(sum((data->>'count')::int), 0)::int AS sessions, COALESCE(sum((data->>'seconds')::bigint), 0)::bigint AS seconds,
            COALESCE(sum((data->>'screens')::int), 0)::int AS screens, COALESCE(sum((data->>'bounces')::int), 0)::int AS bounces,
@@ -146,10 +146,18 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
            COALESCE(sum(NULLIF(data->>'waterGlasses','')::numeric), 0) AS water_glasses
          FROM user_records WHERE collection = 'nutrition_day'`),
     rows(`SELECT date_trunc('day', client_updated_at) AS day, count(*) AS v FROM user_records WHERE collection = 'nutrition_day' AND client_updated_at > now() - interval '30 days' GROUP BY 1`),
+    rows(`(SELECT id, 'order' AS kind, COALESCE(data->'items'->0->>'name', 'Store order') AS title, COALESCE(NULLIF(data->>'totalAmount','')::numeric, 0) AS amount,
+              COALESCE(data->>'orderStatus', 'Pending') AS status, COALESCE(data->>'paymentStatus', '') AS payment, created_at AS at
+            FROM docs WHERE collection = 'orders' AND (NOT (data ? 'totalAmount') OR data->>'totalAmount' ~ '^[0-9.]+$') ORDER BY created_at DESC LIMIT 8)
+          UNION ALL
+          (SELECT id, 'subscription', COALESCE(data->>'planName', 'Coaching') || ' · ' || COALESCE(data->>'trainerName', ''), COALESCE((data->>'amount')::numeric, 0),
+              COALESCE(data->>'status', 'active'), COALESCE(data->>'paymentStatus', ''), created_at
+            FROM docs WHERE collection = 'trainer_subscriptions' ORDER BY created_at DESC LIMIT 8)
+          ORDER BY at DESC LIMIT 8`),
   ]);
 
-  const heatmap = Array.from({ length: 7 }, () => Array(6).fill(0));
-  for (const h of heat) heatmap[(h.dow - 1) % 7][Math.min(5, h.slot)] = h.n;
+  const heatmap = Array.from({ length: 7 }, () => Array(7).fill(0));
+  for (const h of heat) heatmap[(h.dow - 1) % 7][Math.min(6, h.slot)] = h.n;
   const s = num(sessions);
   res.json({ success: true, generatedAt: new Date().toISOString(), data: {
     users: {
@@ -158,8 +166,8 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
         screensPerSession: s.sessions ? +(s.screens / s.sessions).toFixed(1) : 0, bounceRate: s.sessions ? +((s.bounces / s.sessions) * 100).toFixed(1) : 0 },
       goals: goalsNew, signups90: fill(signups90, 90),
     },
-    revenue: { ...num(rev), total: Number(rev.market) + Number(rev.subs), daily: fill(revDaily, 30), monthly: months12(revMonthly).map((m, i) => ({ ...m, market: Number((revMonthly.find((r) => new Date(r.m).toISOString().slice(0, 7) === m.month) || {}).market || 0), subs: Number((revMonthly.find((r) => new Date(r.m).toISOString().slice(0, 7) === m.month) || {}).subs || 0), i })),
-      paymentMethods: payMethods.map(num), byUserType: byUserType.map(num), plans: plans.map(num) },
+    revenue: { ...num(rev), total: Number(rev.market) + Number(rev.subs), daily: fill(revDaily, 30), monthly: months12(revMonthly).map((m) => { const r = revMonthly.find((x) => new Date(x.m).toISOString().slice(0, 7) === m.month) || {}; return { ...m, market: Number(r.market || 0), subs: Number(r.subs || 0) }; }),
+      paymentMethods: payMethods.map(num), byUserType: byUserType.map(num), plans: plans.map(num), transactions: txns.map(num) },
     orders: { categories: orderCats.map(num), cities: cities.map(num), aovDaily: fill(aov, 30), daily: fill(orderDaily, 30), ...num(refunds) },
     trainers: { status: trainerStatus, categories: trainerCats, ratings: ratingBuckets, top: topTrainers.map(num), growth: fill(trainerGrowth, 30), liveDaily: fill(liveDaily, 30), earningsDaily: fill(earnDaily, 30), payout: payout.map(num) },
     fitness: { ...num(fitnessUsers), daily: fill(workoutDaily, 30), programs },

@@ -331,3 +331,138 @@ class AdminTrainers extends ChangeNotifier {
     };
   }
 }
+
+/// Deeper analytics from GET /api/admin/insights (retention, revenue sources,
+/// order categories, trainer earnings, fitness and nutrition). Refreshed at most every 2 minutes.
+class AdminInsights extends ChangeNotifier {
+  AdminInsights._();
+  static final AdminInsights I = AdminInsights._();
+
+  Map<String, dynamic> data = {};
+  bool loading = false;
+  DateTime? _at;
+
+  Future<void> load({bool force = false}) async {
+    if (loading) return;
+    if (!force && _at != null && DateTime.now().difference(_at!) < const Duration(seconds: 120)) return;
+    loading = true;
+    try {
+      final j = await Api.get('/admin/insights');
+      data = Map<String, dynamic>.from(j['data'] as Map);
+      _at = DateTime.now();
+    } catch (_) {
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  Map<String, dynamic> sec(String k) => data[k] is Map ? Map<String, dynamic>.from(data[k]) : <String, dynamic>{};
+  Map<String, dynamic> sub(String a, String b) => sec(a)[b] is Map ? Map<String, dynamic>.from(sec(a)[b]) : <String, dynamic>{};
+  num n(String a, String b) => (sec(a)[b] as num?) ?? 0;
+  List<Map<String, dynamic>> list(String a, String b) => [for (final x in (sec(a)[b] as List? ?? const [])) if (x is Map) Map<String, dynamic>.from(x)];
+  List<double> series(String a, String b, [int days = 30]) {
+    final v = [for (final p in list(a, b)) ((p['value'] as num?) ?? 0).toDouble()];
+    return v.length > days ? v.sublist(v.length - days) : v;
+  }
+}
+
+/// Mixin for analytics screens: rebuild when stats or insights arrive.
+mixin LiveStats<T extends StatefulWidget> on State<T> {
+  void _liveChanged() { if (mounted) setState(() {}); }
+
+  @override
+  void initState() {
+    super.initState();
+    AdminStats.I.addListener(_liveChanged);
+    AdminInsights.I.addListener(_liveChanged);
+    AdminStats.I.load();
+    AdminInsights.I.load();
+  }
+
+  @override
+  void dispose() {
+    AdminStats.I.removeListener(_liveChanged);
+    AdminInsights.I.removeListener(_liveChanged);
+    super.dispose();
+  }
+
+  AdminStats get st => AdminStats.I;
+  AdminInsights get ins => AdminInsights.I;
+
+  /// Share of [part] in [total] as a percent string.
+  String share(num part, num total) => fmtPct(total == 0 ? 0 : part / total * 100);
+
+  /// Highest value in a list, at least [min] (keeps chart axes sane on empty data).
+  double top(Iterable<double> v, [double min = 5]) {
+    var m = min;
+    for (final x in v) { if (x > m) m = x; }
+    return m * 1.15;
+  }
+}
+
+/// Sums a daily series into [buckets] equal groups (e.g. 30 days -> 7 points), oldest first.
+List<double> bucket(List<double> v, int buckets) {
+  if (v.isEmpty) return List.filled(buckets, 0);
+  final out = <double>[];
+  final size = v.length / buckets;
+  for (var b = 0; b < buckets; b++) {
+    final from = (b * size).floor(), to = ((b + 1) * size).floor().clamp(from + 1, v.length);
+    out.add(v.sublist(from, to).fold(0.0, (a, x) => a + x));
+  }
+  return out;
+}
+
+/// Labels like "May 20" for the last [n] days, oldest first.
+List<String> dayLabels(int n) {
+  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final now = DateTime.now();
+  return [for (var i = n - 1; i >= 0; i--) () { final d = now.subtract(Duration(days: i)); return '${m[d.month - 1]} ${d.day}'; }()];
+}
+
+/// Short weekday labels (Mon..Sun) for the last [n] days, oldest first.
+List<String> weekdayLabels(int n) {
+  const w = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  final now = DateTime.now();
+  return [for (var i = n - 1; i >= 0; i--) w[now.subtract(Duration(days: i)).weekday - 1]];
+}
+
+/// "24m 18s" from seconds.
+String fmtDuration(num seconds) {
+  final s = seconds.round();
+  if (s <= 0) return '-';
+  if (s < 60) return '${s}s';
+  if (s < 3600) return '${s ~/ 60}m ${s % 60}s';
+  return '${s ~/ 3600}h ${(s % 3600) ~/ 60}m';
+}
+
+/// Picks the share of a label from a [{label, n}] list.
+String labelShare(List<Map<String, dynamic>> rows, String label) {
+  final total = rows.fold<num>(0, (a, r) => a + ((r['n'] as num?) ?? 0));
+  final r = rows.where((x) => x['label'] == label).toList();
+  final v = r.isEmpty ? 0 : ((r.first['n'] as num?) ?? 0);
+  return fmtPct(total == 0 ? 0 : v / total * 100);
+}
+
+double labelValue(List<Map<String, dynamic>> rows, String label) {
+  final r = rows.where((x) => x['label'] == label).toList();
+  return r.isEmpty ? 0 : ((r.first['n'] as num?) ?? 0).toDouble();
+}
+
+/// ₹24.58L, ₹1.05Cr, ₹3.2K
+String fmtInrShort(num v) {
+  final a = v.abs();
+  final sign = v < 0 ? '-' : '';
+  if (a >= 1e7) return '$sign₹${(a / 1e7).toStringAsFixed(2)}Cr';
+  if (a >= 1e5) return '$sign₹${(a / 1e5).toStringAsFixed(2)}L';
+  if (a >= 1e3) return '$sign₹${(a / 1e3).toStringAsFixed(1)}K';
+  return '$sign₹${a.round()}';
+}
+
+/// Picks a value from [{label, <key>}] rows.
+double pick(List<Map<String, dynamic>> rows, String label, [String key = 'amount']) {
+  for (final r in rows) {
+    if (r['label'] == label) return ((r[key] as num?) ?? 0).toDouble();
+  }
+  return 0;
+}
