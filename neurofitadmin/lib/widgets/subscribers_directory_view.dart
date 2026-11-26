@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
 
 class SubscribersDirectoryView extends StatefulWidget {
   final String selectedDateRange;
@@ -21,96 +23,69 @@ class SubscribersDirectoryView extends StatefulWidget {
 class _SubscribersDirectoryViewState extends State<SubscribersDirectoryView> {
   String _searchQuery = '';
 
-  late List<Map<String, dynamic>> _subscribersList;
+  final AdminList _src = AdminList.of('/admin/subscriptions');
+
+  static Map<String, dynamic> _row(Map<String, dynamic> x) {
+    final months = (x['months'] as num? ?? 1).toInt();
+    final active = x['active'] == true;
+    final expired = !active && x['status'] == 'active';
+    final status = active ? 'Active' : (expired ? 'Expired' : 'Deactivated');
+    final color = active ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+    final amount = x['amount'] as num? ?? 0;
+    final pay = '${x['paymentStatus'] ?? 'pending'}';
+    final id = '${x['id']}';
+    return {
+      ...x,
+      'subId': id,
+      'id': id.length > 8 ? 'SUB-${id.substring(id.length - 6).toUpperCase()}' : id,
+      'name': '${x['userName']}',
+      'email': '${x['email']}',
+      'phone': '${x['phone']}'.isEmpty ? 'No phone' : '${x['phone']}',
+      'plan': '${x['planName'] ?? 'Coaching'} with ${x['trainerName'] ?? 'coach'}',
+      'planTier': months >= 12 ? '👑 VIP ANNUAL' : (months >= 3 ? '⭐ QUARTERLY' : 'MONTHLY'),
+      'planColor': months >= 12 ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+      'billingAmount': '${fmtInr(amount)} / ${months >= 12 ? 'yr' : (months == 1 ? 'mo' : '$months mo')}',
+      'status': status,
+      'statusColor': color,
+      'statusBg': color.withOpacity(0.1),
+      'startDate': shortDate(x['since']?.toString()),
+      'nextRenewal': shortDate(x['until']?.toString()),
+      'paymentMethod': pay == 'paid' ? 'Paid online${x['paymentId'] != null ? ' (${x['paymentId']})' : ''}' : (pay == 'complimentary' ? 'Complimentary (added by admin)' : 'Payment pending'),
+      'avatar': '${x['photo'] ?? ''}',
+      'transactions': [
+        {'id': id.length > 8 ? 'TXN-${id.substring(id.length - 6).toUpperCase()}' : id, 'date': shortDate(x['since']?.toString()), 'amount': fmtInr(amount), 'method': pay == 'complimentary' ? 'Admin grant' : 'Online', 'status': pay == 'paid' ? 'Success (Paid)' : (pay == 'complimentary' ? 'Complimentary' : 'Pending')},
+        for (final g in (x['grants'] as List? ?? const []))
+          if (g is Map) {'id': 'GRANT', 'date': shortDate(g['at']?.toString()), 'amount': '₹0', 'method': '+${g['days']} days free', 'status': 'Granted by admin'},
+      ],
+    };
+  }
+
+  List<Map<String, dynamic>> get _subscribersList => [for (final x in _src.items) _row(x)];
+
+  void _changed() { if (mounted) setState(() {}); }
 
   @override
   void initState() {
     super.initState();
+    _src.addListener(_changed);
+    _src.load();
+  }
 
-    _subscribersList = [
-      {
-        'id': 'SUB-1001',
-        'name': 'Dr. Vikram Seth',
-        'email': 'vikram.seth@gmail.com',
-        'phone': '+91 99112 23344',
-        'plan': 'VIP Coach 1-on-1 Mentorship Tier',
-        'planTier': '👑 VIP PLATINUM',
-        'planColor': const Color(0xFF10B981),
-        'billingAmount': '₹24,999 / yr',
-        'status': 'Active',
-        'statusColor': const Color(0xFF10B981),
-        'statusBg': const Color(0xFFECFDF5),
-        'startDate': 'Jan 15, 2025',
-        'nextRenewal': 'Jan 15, 2026',
-        'paymentMethod': 'HDFC Credit Card (Auto-Pay Active)',
-        'avatar': 'assets/images/trainers_hero_banner.jpg',
-        'transactions': [
-          {'id': 'TXN-89421', 'date': 'Jan 15, 2025', 'amount': '₹24,999', 'method': 'Credit Card •• 4912', 'status': 'Success (Paid)'},
-          {'id': 'TXN-76120', 'date': 'Jan 15, 2024', 'amount': '₹24,999', 'method': 'Credit Card •• 4912', 'status': 'Success (Paid)'},
-        ],
-      },
-      {
-        'id': 'SUB-1002',
-        'name': 'Rhea Singhania',
-        'email': 'rhea.s@gmail.com',
-        'phone': '+91 98223 34455',
-        'plan': 'NeuroFit Elite Annual Pass',
-        'planTier': '⭐ ELITE ANNUAL',
-        'planColor': const Color(0xFF8B5CF6),
-        'billingAmount': '₹7,999 / yr',
-        'status': 'Active',
-        'statusColor': const Color(0xFF10B981),
-        'statusBg': const Color(0xFFECFDF5),
-        'startDate': 'Feb 02, 2025',
-        'nextRenewal': 'Feb 02, 2026',
-        'paymentMethod': 'UPI (Google Pay)',
-        'avatar': 'assets/images/athlete_transform_1787825621309.jpg',
-        'transactions': [
-          {'id': 'TXN-89210', 'date': 'Feb 02, 2025', 'amount': '₹7,999', 'method': 'UPI / GPay', 'status': 'Success (Paid)'},
-        ],
-      },
-      {
-        'id': 'SUB-1003',
-        'name': 'Rahul Verma',
-        'email': 'rahul.v@gmail.com',
-        'phone': '+91 99887 76655',
-        'plan': 'NeuroFit Pro Monthly',
-        'planTier': 'PRO MONTHLY',
-        'planColor': const Color(0xFF3B82F6),
-        'billingAmount': '₹999 / mo',
-        'status': 'Active',
-        'statusColor': const Color(0xFF10B981),
-        'statusBg': const Color(0xFFECFDF5),
-        'startDate': 'May 10, 2025',
-        'nextRenewal': 'Jun 10, 2025',
-        'paymentMethod': 'Debit Card (Recurring)',
-        'avatar': 'assets/images/hero_banner_4.png',
-        'transactions': [
-          {'id': 'TXN-88124', 'date': 'May 10, 2025', 'amount': '₹999', 'method': 'Debit Card', 'status': 'Success (Paid)'},
-        ],
-      },
-      {
-        'id': 'SUB-1004',
-        'name': 'Pooja Mehta',
-        'email': 'pooja.m@gmail.com',
-        'phone': '+91 91234 56780',
-        'plan': 'NeuroFit Pro Monthly',
-        'planTier': 'PRO MONTHLY',
-        'planColor': const Color(0xFFEF4444),
-        'billingAmount': '₹999 / mo',
-        'status': 'Deactivated / Expired',
-        'statusColor': const Color(0xFFEF4444),
-        'statusBg': const Color(0xFFFEF2F2),
-        'startDate': 'Mar 15, 2025',
-        'nextRenewal': 'Expired on Apr 15, 2025',
-        'paymentMethod': 'UPI Auto-debit (Failed)',
-        'avatar': 'assets/images/hero_banner_1.png',
-        'transactions': [
-          {'id': 'TXN-85420', 'date': 'Apr 15, 2025', 'amount': '₹999', 'method': 'UPI Auto-debit', 'status': 'Failed (Insufficient Funds)'},
-          {'id': 'TXN-82100', 'date': 'Mar 15, 2025', 'amount': '₹999', 'method': 'UPI Auto-debit', 'status': 'Success (Paid)'},
-        ],
-      },
-    ];
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _patch(Map<String, dynamic> s, Map<String, dynamic> body, String ok) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await Api.send('PATCH', '/admin/subscriptions/${s['subId']}', body);
+      await _src.load();
+      messenger.showSnackBar(SnackBar(content: Text(ok), behavior: SnackBarBehavior.floating, backgroundColor: const Color(0xFF10B981)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating, backgroundColor: const Color(0xFFEF4444)));
+    }
   }
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -132,19 +107,8 @@ class _SubscribersDirectoryViewState extends State<SubscribersDirectoryView> {
       barrierColor: Colors.black.withOpacity(0.6),
       builder: (ctx) => _SubscriberDetailBottomSheet(
         subscriber: s,
-        onStatusToggle: () {
-          setState(() {
-            if (s['status'] == 'Active') {
-              s['status'] = 'Deactivated';
-              s['statusColor'] = const Color(0xFFEF4444);
-              s['statusBg'] = const Color(0xFFFEF2F2);
-            } else {
-              s['status'] = 'Active';
-              s['statusColor'] = const Color(0xFF10B981);
-              s['statusBg'] = const Color(0xFFECFDF5);
-            }
-          });
-        },
+        onStatusToggle: () => _patch(s, {'status': s['status'] == 'Active' ? 'cancelled' : 'active'}, s['status'] == 'Active' ? 'Subscription deactivated' : 'Subscription activated'),
+        onGrant: () => _patch(s, {'extendDays': 30}, '1 free month added for ${s['name']}'),
       ),
     );
   }
@@ -176,11 +140,18 @@ class _SubscribersDirectoryViewState extends State<SubscribersDirectoryView> {
   }
 
   Widget _buildKpiCarousel() {
+    final all = _subscribersList;
+    final active = all.where((x) => x['status'] == 'Active').toList();
+    final monthAgo = DateTime.now().subtract(const Duration(days: 30));
+    final newMo = all.where((x) => DateTime.tryParse('${x['since'] ?? ''}')?.isAfter(monthAgo) ?? false).length;
+    final annual = active.where((x) => (x['months'] as num? ?? 1) >= 12).length;
+    final paid = all.where((x) => x['paymentStatus'] == 'paid').length;
+    final lapsed = all.where((x) => x['status'] != 'Active').length;
     final kpis = [
-      {'title': 'Total Subscribers', 'val': '7,740 Active', 'growth': '+340 this mo', 'icon': Icons.people_alt_rounded, 'color': const Color(0xFF6366F1), 'bg': const Color(0xFFEEF2FF)},
-      {'title': 'Annual Members', 'val': '4,900 VIPs', 'growth': '63.3% retention', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Auto-Renewal', 'val': '92.4%', 'growth': 'Active mandate', 'icon': Icons.autorenew_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Expired / Failed', 'val': '142 Users', 'growth': 'Payment recovery', 'icon': Icons.cancel_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
+      {'title': 'Total Subscribers', 'val': '${fmtInt(active.length)} Active', 'growth': '+$newMo this mo', 'icon': Icons.people_alt_rounded, 'color': const Color(0xFF6366F1), 'bg': const Color(0xFFEEF2FF)},
+      {'title': 'Annual Members', 'val': '${fmtInt(annual)} VIPs', 'growth': '${fmtPct(all.isEmpty ? 0 : active.length / all.length * 100)} retention', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Paid Online', 'val': fmtPct(all.isEmpty ? 0 : paid / all.length * 100), 'growth': '$paid of ${all.length} plans', 'icon': Icons.autorenew_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Expired / Failed', 'val': '${fmtInt(lapsed)} Users', 'growth': 'Payment recovery', 'icon': Icons.cancel_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
     ];
 
     return SingleChildScrollView(
@@ -268,7 +239,7 @@ class _SubscribersDirectoryViewState extends State<SubscribersDirectoryView> {
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
                   child: Row(
                     children: [
-                      CircleAvatar(radius: 22, backgroundImage: AssetImage(s['avatar'] as String)),
+                      CircleAvatar(radius: 22, backgroundColor: const Color(0xFFE2E8F0), backgroundImage: '${s['avatar']}'.startsWith('http') ? NetworkImage('${s['avatar']}') : null, child: '${s['avatar']}'.startsWith('http') ? null : Icon(Icons.person, size: 22, color: const Color(0xFF64748B))),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -368,8 +339,9 @@ class _SubscribersDirectoryViewState extends State<SubscribersDirectoryView> {
 class _SubscriberDetailBottomSheet extends StatefulWidget {
   final Map<String, dynamic> subscriber;
   final VoidCallback onStatusToggle;
+  final VoidCallback onGrant;
 
-  const _SubscriberDetailBottomSheet({required this.subscriber, required this.onStatusToggle});
+  const _SubscriberDetailBottomSheet({required this.subscriber, required this.onStatusToggle, required this.onGrant});
 
   @override
   State<_SubscriberDetailBottomSheet> createState() => _SubscriberDetailBottomSheetState();
@@ -409,7 +381,7 @@ class _SubscriberDetailBottomSheetState extends State<_SubscriberDetailBottomShe
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                CircleAvatar(radius: 26, backgroundImage: AssetImage(s['avatar'] as String)),
+                CircleAvatar(radius: 26, backgroundColor: const Color(0xFFE2E8F0), backgroundImage: '${s['avatar']}'.startsWith('http') ? NetworkImage('${s['avatar']}') : null, child: '${s['avatar']}'.startsWith('http') ? null : Icon(Icons.person, size: 26, color: const Color(0xFF64748B))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -523,7 +495,10 @@ class _SubscriberDetailBottomSheetState extends State<_SubscriberDetailBottomShe
                 Expanded(
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF8B5CF6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      widget.onGrant();
+                      Navigator.pop(context);
+                    },
                     icon: const Icon(Icons.card_giftcard_rounded, size: 14, color: Colors.white),
                     label: const Text('Grant +1 Month Free', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
                   ),

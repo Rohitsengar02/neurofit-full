@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import 'net_or_asset_image.dart';
 
 class UserVerificationView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,98 +23,75 @@ class _UserVerificationViewState extends State<UserVerificationView> {
   int _selectedTab = 0; // 0=All, 1=Pending, 2=Approved, 3=Rejected
   String _searchQuery = '';
 
-  final List<Map<String, dynamic>> _verificationList = [
-    {
-      'id': '#KYC-9421',
-      'name': 'Kavita Sharma',
-      'role': 'Trainer Applicant (ACE Certified)',
-      'email': 'kavita.sharma@gmail.com',
-      'submitted': 'Today, 11:42 AM',
-      'docType': 'National ID + ACE Certificate',
-      'docIcon': Icons.badge_rounded,
-      'aiScore': '98.4% Match',
-      'risk': 'Low Risk',
-      'riskColor': Color(0xFF10B981),
-      'riskBg': Color(0xFFECFDF5),
-      'status': 'Pending Review',
-      'statusColor': Color(0xFFF59E0B),
-      'avatar': 'assets/images/trainers_hero_banner.jpg',
-      'avatarBg': Color(0xFFEDE9FE),
-      'idNumber': 'XXXX-XXXX-8923',
-    },
-    {
-      'name': 'Aman Singhania',
-      'id': '#KYC-9420',
-      'role': 'Premium VIP Member',
-      'email': 'aman.s@gmail.com',
-      'submitted': 'Today, 10:15 AM',
-      'docType': 'Passport + Medical Fitness Clearance',
-      'docIcon': Icons.medical_services_rounded,
-      'aiScore': '99.1% Match',
-      'risk': 'Low Risk',
-      'riskColor': Color(0xFF10B981),
-      'riskBg': Color(0xFFECFDF5),
-      'status': 'Pending Review',
-      'statusColor': Color(0xFFF59E0B),
-      'avatar': 'assets/images/athlete_transform_1787825621309.jpg',
-      'avatarBg': Color(0xFFDCFCE7),
-      'idNumber': 'P-8927419',
-    },
-    {
-      'name': 'Rajeshwari Iyer',
-      'id': '#KYC-9419',
-      'role': 'Yoga Instructor Partner',
-      'email': 'rajeshwari.i@gmail.com',
-      'submitted': 'Yesterday, 4:30 PM',
-      'docType': 'Yoga Alliance 500h + Govt ID',
-      'docIcon': Icons.spa_rounded,
-      'aiScore': '96.8% Match',
-      'risk': 'Low Risk',
-      'riskColor': Color(0xFF10B981),
-      'riskBg': Color(0xFFECFDF5),
-      'status': 'Approved',
-      'statusColor': Color(0xFF10B981),
-      'avatar': 'assets/images/hero_banner_1.png',
-      'avatarBg': Color(0xFFFEF3C7),
-      'idNumber': 'YA-500-4821',
-    },
-    {
-      'name': 'Mohit Deshpande',
-      'id': '#KYC-9418',
-      'role': 'Nutritionist Partner',
-      'email': 'mohit.d@gmail.com',
-      'submitted': 'May 25, 2025',
-      'docType': 'Dietetics Degree + Address Proof',
-      'docIcon': Icons.restaurant_rounded,
-      'aiScore': '84.2% Match',
-      'risk': 'Medium Risk',
-      'riskColor': Color(0xFFF59E0B),
-      'riskBg': Color(0xFFFFFBEB),
-      'status': 'Approved',
-      'statusColor': Color(0xFF10B981),
-      'avatar': 'assets/images/hero_banner_4.png',
-      'avatarBg': Color(0xFFDBEAFE),
-      'idNumber': 'MCD-89214',
-    },
-    {
-      'name': 'Tarun Malhotra',
-      'id': '#KYC-9417',
-      'role': 'Gym Partner & Trainer',
-      'email': 'tarun.m@gmail.com',
-      'submitted': 'May 24, 2025',
-      'docType': 'Govt ID (Blurry copy)',
-      'docIcon': Icons.warning_amber_rounded,
-      'aiScore': '61.5% Match',
-      'risk': 'High Risk',
-      'riskColor': Color(0xFFEF4444),
-      'riskBg': Color(0xFFFEF2F2),
-      'status': 'Rejected',
-      'statusColor': Color(0xFFEF4444),
-      'avatar': 'assets/images/workout_banner_1.png',
-      'avatarBg': Color(0xFFFFEDD5),
-      'idNumber': 'UNREADABLE_DOC',
-    },
-  ];
+  AdminUsers get _src => AdminUsers.of('all');
+
+  static Map<String, dynamic> _row(Map<String, dynamic> u) {
+    final vs = '${u['verificationStatus'] ?? ''}';
+    final status = u['isVerified'] == true ? 'Approved' : (vs == 'rejected' ? 'Rejected' : 'Pending Review');
+    final checks = [
+      '${u['name'] ?? ''}'.trim().isNotEmpty,
+      '${u['email'] ?? ''}'.isNotEmpty,
+      '${u['phone'] ?? ''}'.isNotEmpty && u['phone'] != 'No phone',
+      '${u['photoUrl'] ?? ''}'.isNotEmpty,
+      u['hasCompletedOnboarding'] == true,
+    ];
+    final score = checks.where((c) => c).length / checks.length * 100;
+    final risk = score >= 80 ? 'Low Risk' : (score >= 50 ? 'Medium Risk' : 'High Risk');
+    final riskColor = score >= 80 ? const Color(0xFF10B981) : (score >= 50 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444));
+    final phone = '${u['phone'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+    final uid = '${u['uid'] ?? ''}';
+    final google = u['authProvider'] == 'google';
+    return {
+      ...u,
+      'id': '#${uid.length > 6 ? uid.substring(uid.length - 6).toUpperCase() : uid}',
+      'name': u['name'],
+      'role': u['role'] == 'trainer' ? 'Coach' : (u['isPremium'] == true ? 'Premium Member' : 'Member'),
+      'email': u['email'],
+      'submitted': '${timeAgo(u['createdAt']?.toString())} · ${shortDate(u['createdAt']?.toString())}',
+      'docType': google ? 'Google account${phone.isNotEmpty ? ' + Phone' : ''}' : 'Email sign-up${phone.isNotEmpty ? ' + Phone' : ''}',
+      'docIcon': google ? Icons.verified_user_rounded : Icons.badge_rounded,
+      'aiScore': '${score.round()}% complete',
+      'risk': risk,
+      'riskColor': riskColor,
+      'riskBg': riskColor.withOpacity(0.1),
+      'status': status,
+      'statusColor': status == 'Approved' ? const Color(0xFF10B981) : (status == 'Rejected' ? const Color(0xFFEF4444) : const Color(0xFFF59E0B)),
+      'avatar': '${u['photoUrl'] ?? ''}',
+      'avatarBg': const Color(0xFFEDE9FE),
+      'idNumber': phone.length >= 4 ? 'XXXX-XXXX-${phone.substring(phone.length - 4)}' : 'No phone on file',
+    };
+  }
+
+  List<Map<String, dynamic>> get _verificationList => [for (final u in _src.rows) _row(u)];
+
+  void _changed() { if (mounted) setState(() {}); }
+
+  @override
+  void initState() {
+    super.initState();
+    _src.addListener(_changed);
+    _src.load();
+  }
+
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _decide(Map<String, dynamic> item, bool ok) async {
+    try {
+      await Api.send('PUT', '/users/${item['uid']}', ok
+          ? {'isVerified': true, 'verificationStatus': 'approved', 'verifiedAt': DateTime.now().toUtc().toIso8601String()}
+          : {'isVerified': false, 'verificationStatus': 'rejected', 'verifiedAt': DateTime.now().toUtc().toIso8601String()});
+      await _src.load();
+      AdminStats.I.load(force: true);
+      _showSnackbar(ok ? '${item['name']} approved successfully!' : '${item['name']} marked as rejected / resubmit.', ok ? const Color(0xFF10B981) : const Color(0xFFEF4444));
+    } catch (e) {
+      _showSnackbar('Could not update: $e', const Color(0xFFEF4444));
+    }
+  }
+
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -196,7 +176,7 @@ class _UserVerificationViewState extends State<UserVerificationView> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(color: item['riskBg'] as Color, borderRadius: BorderRadius.circular(6)),
-                  child: Text('AI Match: ${item['aiScore']}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: item['riskColor'] as Color)),
+                  child: Text('Profile: ${item['aiScore']}', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: item['riskColor'] as Color)),
                 ),
                 const SizedBox(width: 6),
                 Container(
@@ -214,8 +194,7 @@ class _UserVerificationViewState extends State<UserVerificationView> {
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
-              setState(() => item['status'] = 'Approved');
-              _showSnackbar('Verification for ${item['name']} approved!', const Color(0xFF10B981));
+              _decide(item, true);
             },
             child: const Text('Approve KYC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
@@ -244,11 +223,21 @@ class _UserVerificationViewState extends State<UserVerificationView> {
   }
 
   Widget _buildKpiCarousel() {
+    final all = _verificationList;
+    int c(String s) => all.where((x) => x['status'] == s).length;
+    final today = DateTime.now();
+    bool isToday(dynamic v) { final t = DateTime.tryParse('${v ?? ''}')?.toLocal(); return t != null && t.year == today.year && t.month == today.month && t.day == today.day; }
+    final todayCount = all.where((x) => x['status'] == 'Approved' && isToday(x['verifiedAt'])).length;
+    final waits = [
+      for (final x in all)
+        if (x['verifiedAt'] != null && x['createdAt'] != null)
+          DateTime.parse('${x['verifiedAt']}').difference(DateTime.parse('${x['createdAt']}')).inMinutes / 60
+    ];
     final kpis = [
-      {'title': 'Pending KYC', 'val': '42', 'growth': 'Requires review', 'icon': Icons.pending_actions_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Verified Today', 'val': '128', 'growth': '+18.4% processed', 'icon': Icons.verified_user_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Rejected / Resubmit', 'val': '9', 'growth': 'Doc blur / mismatch', 'icon': Icons.gpp_bad_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
-      {'title': 'Avg Turnaround', 'val': '4.2 hrs', 'growth': 'SLA compliance 99%', 'icon': Icons.speed_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
+      {'title': 'Pending KYC', 'val': fmtInt(c('Pending Review')), 'growth': 'Requires review', 'icon': Icons.pending_actions_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Verified Today', 'val': fmtInt(todayCount), 'growth': '${fmtInt(c('Approved'))} verified in total', 'icon': Icons.verified_user_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Rejected / Resubmit', 'val': fmtInt(c('Rejected')), 'growth': 'Asked to resubmit', 'icon': Icons.gpp_bad_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
+      {'title': 'Avg Turnaround', 'val': waits.isEmpty ? '-' : '${(waits.reduce((a, b) => a + b) / waits.length).toStringAsFixed(1)} hrs', 'growth': 'Sign-up to decision', 'icon': Icons.speed_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
     ];
 
     return SingleChildScrollView(
@@ -290,7 +279,9 @@ class _UserVerificationViewState extends State<UserVerificationView> {
   }
 
   Widget _buildSearchAndFilterSection() {
-    final tabs = ['All (179)', 'Pending (42)', 'Approved (128)', 'Rejected (9)'];
+    final all = _verificationList;
+    int c(String s) => all.where((x) => x['status'] == s).length;
+    final tabs = ['All (${all.length})', 'Pending (${c('Pending Review')})', 'Approved (${c('Approved')})', 'Rejected (${c('Rejected')})'];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,7 +393,7 @@ class _UserVerificationViewState extends State<UserVerificationView> {
                     decoration: BoxDecoration(color: item['avatarBg'] as Color, shape: BoxShape.circle),
                     padding: const EdgeInsets.all(2),
                     child: ClipOval(
-                      child: Image.asset(item['avatar'] as String, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person)),
+                      child: NetOrAssetImage(item['avatar'] as String, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -492,8 +483,7 @@ class _UserVerificationViewState extends State<UserVerificationView> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
-                          setState(() => item['status'] = 'Approved');
-                          _showSnackbar('${item['name']} approved successfully!', const Color(0xFF10B981));
+                          _decide(item, true);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -509,8 +499,7 @@ class _UserVerificationViewState extends State<UserVerificationView> {
                     const SizedBox(width: 6),
                     GestureDetector(
                       onTap: () {
-                        setState(() => item['status'] = 'Rejected');
-                        _showSnackbar('${item['name']} marked as rejected / resubmit.', const Color(0xFFEF4444));
+                        _decide(item, false);
                       },
                       child: Container(
                         padding: const EdgeInsets.all(8),

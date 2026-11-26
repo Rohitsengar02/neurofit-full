@@ -217,6 +217,37 @@ router.get('/user-list', requireAdmin, cached(['users', 'orders', 'trainer_subsc
   }) });
 });
 
+// Coaching subscriptions (the paid plans users buy), newest first.
+router.get('/subscriptions', requireAdmin, cached(['trainer_subscriptions', 'users'], 30), async (_req, res) => {
+  const { rows } = await query(
+    `SELECT s.id, s.owner_id, s.data, s.created_at, u.name, u.email, u.phone, u.photo_url
+       FROM docs s LEFT JOIN users u ON u.id = s.owner_id
+      WHERE s.collection = 'trainer_subscriptions' ORDER BY s.created_at DESC LIMIT 1000`);
+  res.json({ success: true, data: rows.map((r) => ({
+    ...r.data, id: r.id, userId: r.owner_id, createdAt: r.created_at,
+    userName: r.name || r.data.userName || 'User', email: r.email || '', phone: r.phone || '', photo: r.photo_url || r.data.userPhoto || '',
+    active: r.data.status === 'active' && Date.parse(r.data.until) > Date.now(),
+  })) });
+});
+
+router.patch('/subscriptions/:id', requireAdmin, async (req, res) => {
+  const docs = require('../lib/docs');
+  const row = await docs.get('trainer_subscriptions', req.params.id);
+  if (!row) return res.status(404).json({ success: false, message: 'Subscription not found' });
+  const patch = {};
+  if (req.body.status) patch.status = req.body.status === 'active' ? 'active' : 'cancelled';
+  const extra = Number(req.body.extendDays || 0);
+  if (extra > 0) {
+    const base = Math.max(Date.parse(row.data.until) || Date.now(), Date.now());
+    patch.until = new Date(base + extra * 864e5).toISOString();
+    patch.status = 'active';
+    patch.grants = [...(row.data.grants || []), { days: extra, at: new Date().toISOString() }];
+  }
+  const updated = await docs.upsert('trainer_subscriptions', row.id, patch);
+  await require('../lib/cache').bump('trainer_subscriptions');
+  res.json({ success: true, data: docs.toItem(updated) });
+});
+
 // Health of the moving parts, for the admin settings page.
 router.get('/system', requireAdmin, async (_req, res) => {
   const t = Date.now();

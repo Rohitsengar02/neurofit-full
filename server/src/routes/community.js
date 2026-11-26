@@ -1,6 +1,7 @@
 // Community feed: posts (photo, before/after, workout, poll, text), likes,
 // saves, poll votes, comments, reports. Admin can moderate.
 const express = require('express');
+const { notify } = require('./notifications');
 const { query, one } = require('../db');
 const docs = require('../lib/docs');
 const { requireAuth, requireAdmin, isAdmin, optionalAuth } = require('../lib/auth');
@@ -101,7 +102,36 @@ router.post('/posts/:id/report', requireAuth, async (req, res) => {
   await query(`INSERT INTO reactions (target_id, user_id, kind) VALUES ($1, $2, 'report') ON CONFLICT DO NOTHING`, [`post:${req.params.id}`, req.user.id]);
   const n = await one(`SELECT count(*)::int AS n FROM reactions WHERE target_id = $1 AND kind = 'report'`, [`post:${req.params.id}`]);
   if (n.n >= 5) await docs.upsert('posts', req.params.id, { hidden: true, hiddenReason: 'reports' });
+  const post = await docs.get('posts', req.params.id);
+  const me = await one('SELECT name FROM users WHERE id = $1', [req.user.id]);
+  // one open case per post; each new report bumps its count
+  const caseId = `rep_post_${req.params.id}`;
+  const existing = await docs.get('reports', caseId);
+  await docs.upsert('reports', caseId, {
+    category: 'Community Post', targetType: 'post', targetId: req.params.id,
+    title: (req.body && req.body.reason) || (existing && existing.data.title) || 'Reported community post',
+    description: post ? String(post.data.text || post.data.caption || '').slice(0, 300) : '',
+    reported: post ? `${post.data.authorName || 'User'} (post)` : 'Deleted post', reportedId: post ? post.owner_id : null,
+    reporter: existing ? existing.data.reporter : (me ? me.name : 'User'), reporterId: existing ? existing.data.reporterId : req.user.id,
+    count: n.n, status: existing && existing.data.status === 'resolved' && n.n <= (existing.data.count || 0) ? 'resolved' : 'open',
+    autoHidden: n.n >= 5,
+  });
+  await cache.bump('reports');
   res.json({ success: true });
+});
+
+// Any other complaint from the app (a coach, an order, a user).
+router.post('/reports', requireAuth, async (req, res) => {
+  const b = req.body || {};
+  const me = await one('SELECT name FROM users WHERE id = $1', [req.user.id]);
+  const row = await docs.upsert('reports', b.id || docs.newId('rep'), {
+    category: String(b.category || 'General').slice(0, 60), title: String(b.title || 'Report').slice(0, 140), description: String(b.description || '').slice(0, 2000),
+    targetType: b.targetType || null, targetId: b.targetId || null, reported: String(b.reported || '').slice(0, 120),
+    reporter: me ? me.name : 'User', reporterId: req.user.id, count: 1, status: 'open', evidence: Array.isArray(b.evidence) ? b.evidence.slice(0, 10) : [],
+  }, { ownerId: req.user.id });
+  await cache.bump('reports');
+  notify({ audience: 'admins', title: 'New report', body: row.data.title, type: 'report', refId: row.id }).catch(() => {});
+  res.status(201).json({ success: true, data: docs.toItem(row) });
 });
 
 router.post('/posts/:id/vote', requireAuth, async (req, res) => {
@@ -150,6 +180,23 @@ router.get('/admin/reported', requireAdmin, async (_req, res) => {
     `SELECT d.* FROM docs d JOIN (SELECT target_id, count(*) AS n FROM reactions WHERE kind = 'report' GROUP BY target_id) r ON r.target_id = 'post:' || d.id
      WHERE d.collection = 'posts' ORDER BY r.n DESC LIMIT 200`);
   res.json({ success: true, data: await decorate(rows, null) });
+});
+
+router.get('/admin/reports', requireAdmin, async (_req, res) => {
+  const rows = await docs.list('reports', { order: 'new', limit: 500 });
+  res.json({ success: true, data: rows.map((r) => docs.toItem(r)) });
+});
+
+router.patch('/admin/reports/:id', requireAdmin, async (req, res) => {
+  const row = await docs.get('reports', req.params.id);
+  if (!row) return res.status(404).json({ success: false, message: 'Report not found' });
+  const status = ['open', 'review', 'resolved'].includes(req.body.status) ? req.body.status : 'resolved';
+  const patch = { status, note: req.body.note || row.data.note || null };
+  if (status === 'resolved') patch.resolvedAt = new Date().toISOString();
+  const updated = await docs.upsert('reports', row.id, patch);
+  if (req.body.hidePost && row.data.targetType === 'post') await docs.upsert('posts', row.data.targetId, { hidden: true, hiddenReason: 'admin' });
+  await cache.bump('reports', 'posts');
+  res.json({ success: true, data: docs.toItem(updated) });
 });
 
 router.post('/admin/posts/:id/hide', requireAdmin, async (req, res) => {

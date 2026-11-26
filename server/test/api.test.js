@@ -176,6 +176,13 @@ test('trainer apply → approve → subscribe → chat → panel', async () => {
   assert.ok(r.body.data.find((t) => t.id === coach.data.uid).revenue30d > 0);
   r = await call('POST', `/api/admin/trainers/${coach.data.uid}/assign`, { email: user2 ? user2.data.email : user.data.email }, admin.accessToken);
   assert.equal(r.status, 201); assert.equal(r.body.data.paymentStatus, 'complimentary');
+  r = await call('GET', '/api/admin/subscriptions', null, admin.accessToken);
+  const sub = r.body.data.find((x) => x.trainerId === coach.data.uid && x.active);
+  assert.ok(sub);
+  r = await call('PATCH', `/api/admin/subscriptions/${sub.id}`, { extendDays: 30 }, admin.accessToken);
+  assert.ok(Date.parse(r.body.data.until) > Date.parse(sub.until));
+  r = await call('PATCH', `/api/admin/subscriptions/${sub.id}`, { status: 'cancelled' }, admin.accessToken);
+  assert.equal(r.body.data.status, 'cancelled');
 });
 
 test('community', async () => {
@@ -192,6 +199,14 @@ test('community', async () => {
   const p = r.body.data.find((x) => x.id === pid);
   assert.equal(p.likes, 1); assert.equal(p.commentsCount, 1); assert.equal(p.mine, true);
   r = await call('DELETE', `/api/community/posts/${pid}`, null, user2.accessToken);
+  assert.equal(r.status, 403);
+  r = await call('POST', `/api/community/posts/${pid}/report`, { reason: 'Spam' }, user2.accessToken);
+  r = await call('GET', '/api/community/admin/reports', null, admin.accessToken);
+  const rep = r.body.data.find((x) => x.targetId === pid);
+  assert.ok(rep); assert.equal(rep.status, 'open'); assert.equal(rep.title, 'Spam');
+  r = await call('PATCH', `/api/community/admin/reports/${rep.id}`, { status: 'resolved' }, admin.accessToken);
+  assert.equal(r.body.data.status, 'resolved');
+  r = await call('GET', '/api/community/admin/reports', null, user.accessToken);
   assert.equal(r.status, 403);
 });
 

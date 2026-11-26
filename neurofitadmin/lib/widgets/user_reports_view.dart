@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
 
 class UserReportsView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,72 +22,66 @@ class _UserReportsViewState extends State<UserReportsView> {
   int _selectedFilter = 0; // 0=All, 1=Urgent, 2=Disputes, 3=Harassment, 4=Resolved
   String _searchQuery = '';
 
-  final List<Map<String, dynamic>> _reportsList = [
-    {
-      'id': '#REP-4029',
-      'title': 'Abusive language in 1-on-1 session',
-      'category': 'Trainer Conduct',
-      'severity': 'Urgent',
-      'severityColor': Color(0xFFEF4444),
-      'severityBg': Color(0xFFFEF2F2),
-      'reporter': 'Priya Patel (Pro Member)',
-      'reported': 'Karan Mehta (Trainer ID: #TR-102)',
-      'desc': 'Trainer did not show up on time and used abusive words during rescheduled session.',
-      'status': 'In Review',
-      'statusColor': Color(0xFFF59E0B),
-      'sla': '35m SLA remaining',
-      'date': 'Today, 1:15 PM',
-      'evidenceCount': '2 screenshots attached',
-    },
-    {
-      'id': '#REP-4028',
-      'title': 'Damaged Whey Protein delivery package',
-      'category': 'Marketplace Dispute',
-      'severity': 'Medium',
-      'severityColor': Color(0xFFF59E0B),
-      'severityBg': Color(0xFFFFFBEB),
-      'reporter': 'Rahul Verma',
-      'reported': 'Vendor: NutriFit Store (#VEN-89)',
-      'desc': 'Seal was broken upon unboxing. Requesting immediate refund or replacement tub.',
-      'status': 'In Review',
-      'statusColor': Color(0xFFF59E0B),
-      'sla': '1.5 hrs remaining',
-      'date': 'Today, 10:45 AM',
-      'evidenceCount': '3 unboxing photos',
-    },
-    {
-      'id': '#REP-4027',
-      'title': 'Spam links in Community Challenge chat',
-      'category': 'Community Spam',
-      'severity': 'Low',
-      'severityColor': Color(0xFF3B82F6),
-      'severityBg': Color(0xFFEFF6FF),
-      'reporter': 'System Auto-Mod',
-      'reported': 'User: FreeGains99 (#USR-2891)',
-      'desc': 'Repeated posting of unauthorized external telegram promotion links.',
-      'status': 'Resolved',
-      'statusColor': Color(0xFF10B981),
-      'sla': 'Resolved in 12m',
-      'date': 'Yesterday, 8:20 PM',
-      'evidenceCount': 'Automated log capture',
-    },
-    {
-      'id': '#REP-4026',
-      'title': 'Unauthorized recurring card charge dispute',
-      'category': 'Billing Dispute',
-      'severity': 'Urgent',
-      'severityColor': Color(0xFFEF4444),
-      'severityBg': Color(0xFFFEF2F2),
-      'reporter': 'Amit Sharma',
-      'reported': 'NeuroFit Subscriptions',
-      'desc': 'Charged for annual plan after cancellation request was submitted on May 20.',
-      'status': 'Resolved',
-      'statusColor': Color(0xFF10B981),
-      'sla': 'Refund initiated',
-      'date': 'May 25, 2025',
-      'evidenceCount': 'Bank statement attached',
-    },
-  ];
+  final AdminList _src = AdminList.of('/community/admin/reports');
+
+  static Map<String, dynamic> _row(Map<String, dynamic> x) {
+    final count = (x['count'] as num? ?? 1).toInt();
+    final urgent = count >= 3 || x['autoHidden'] == true;
+    final status = x['status'] == 'resolved' ? 'Resolved' : (x['status'] == 'review' ? 'In Review' : 'Open');
+    var cat = '${x['category'] ?? 'General'}';
+    if ((x['targetType'] == 'order' || x['targetType'] == 'trainer') && !cat.contains('Dispute')) cat = '$cat Dispute';
+    final id = '${x['id'] ?? ''}';
+    final created = DateTime.tryParse('${x['createdAt'] ?? ''}');
+    final age = created == null ? 0 : DateTime.now().difference(created.toLocal()).inMinutes;
+    final left = (urgent ? 60 : 24 * 60) - age;
+    final ev = (x['evidence'] as List? ?? const []).length;
+    return {
+      ...x,
+      'docId': id,
+      'id': '#${id.length > 6 ? id.substring(id.length - 6).toUpperCase() : id.toUpperCase()}',
+      'title': '${x['title'] ?? 'Report'}',
+      'category': cat,
+      'severity': urgent ? 'Urgent' : 'Normal',
+      'severityColor': urgent ? const Color(0xFFEF4444) : const Color(0xFFF59E0B),
+      'severityBg': urgent ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+      'reporter': '${x['reporter'] ?? 'User'}${count > 1 ? ' +${count - 1} more' : ''}',
+      'reported': '${x['reported'] ?? '-'}',
+      'desc': '${x['description'] ?? ''}'.isEmpty ? 'No details given.' : '${x['description']}',
+      'status': status,
+      'statusColor': status == 'Resolved' ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+      'sla': status == 'Resolved' ? 'Closed' : (left > 0 ? '${left >= 60 ? '${left ~/ 60}h ' : ''}${left % 60}m SLA remaining' : 'SLA passed'),
+      'date': '${timeAgo(x['createdAt']?.toString())} · ${shortDate(x['createdAt']?.toString())}',
+      'evidenceCount': x['autoHidden'] == true ? 'Post auto-hidden ($count reports)' : (ev > 0 ? '$ev attachment${ev == 1 ? '' : 's'}' : '$count report${count == 1 ? '' : 's'}'),
+    };
+  }
+
+  List<Map<String, dynamic>> get _reportsList => [for (final x in _src.items) _row(x)];
+
+  void _changed() { if (mounted) setState(() {}); }
+
+  @override
+  void initState() {
+    super.initState();
+    _src.addListener(_changed);
+    _src.load();
+  }
+
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _resolve(Map<String, dynamic> r) async {
+    try {
+      await Api.send('PATCH', '/community/admin/reports/${r['docId']}', {'status': 'resolved'});
+      await _src.load();
+      _showSnackbar('Report ${r['id']} marked as resolved!', const Color(0xFF10B981));
+    } catch (e) {
+      _showSnackbar('Could not resolve: $e', const Color(0xFFEF4444));
+    }
+  }
+
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -169,8 +165,7 @@ class _UserReportsViewState extends State<UserReportsView> {
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
-              setState(() => r['status'] = 'Resolved');
-              _showSnackbar('Report ${r['id']} marked as resolved!', const Color(0xFF10B981));
+              _resolve(r);
             },
             child: const Text('Mark Resolved', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
@@ -199,11 +194,20 @@ class _UserReportsViewState extends State<UserReportsView> {
   }
 
   Widget _buildKpiCarousel() {
+    final all = _reportsList;
+    final open = all.where((r) => r['status'] != 'Resolved').toList();
+    final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+    final resolved7 = all.where((r) => r['status'] == 'Resolved' && (DateTime.tryParse('${r['resolvedAt'] ?? ''}')?.isAfter(weekAgo) ?? false)).length;
+    final times = [
+      for (final r in all)
+        if (r['resolvedAt'] != null && r['createdAt'] != null)
+          DateTime.parse('${r['resolvedAt']}').difference(DateTime.parse('${r['createdAt']}')).inMinutes / 60
+    ];
     final kpis = [
-      {'title': 'Open Incidents', 'val': '18', 'growth': '5 High Priority', 'icon': Icons.warning_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
-      {'title': 'Resolved (7D)', 'val': '94', 'growth': '96.2% SLA Met', 'icon': Icons.check_circle_outline_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Avg Resolution', 'val': '1.8 hrs', 'growth': 'Target < 3.0h', 'icon': Icons.timer_outlined, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Disputes Pending', 'val': '7', 'growth': 'Store & Trainer', 'icon': Icons.storefront_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Open Incidents', 'val': '${open.length}', 'growth': '${open.where((r) => r['severity'] == 'Urgent').length} High Priority', 'icon': Icons.warning_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
+      {'title': 'Resolved (7D)', 'val': '$resolved7', 'growth': '${all.where((r) => r['status'] == 'Resolved').length} resolved in total', 'icon': Icons.check_circle_outline_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Avg Resolution', 'val': times.isEmpty ? '-' : '${(times.reduce((a, b) => a + b) / times.length).toStringAsFixed(1)} hrs', 'growth': 'Target < 3.0h', 'icon': Icons.timer_outlined, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Disputes Pending', 'val': '${open.where((r) => '${r['category']}'.contains('Dispute')).length}', 'growth': 'Store & Trainer', 'icon': Icons.storefront_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
     ];
 
     return SingleChildScrollView(
@@ -245,7 +249,8 @@ class _UserReportsViewState extends State<UserReportsView> {
   }
 
   Widget _buildSearchAndFilterSection() {
-    final tabs = ['All (112)', 'Urgent (5)', 'Disputes (7)', 'Resolved (94)'];
+    final all = _reportsList;
+    final tabs = ['All (${all.length})', 'Urgent (${all.where((r) => r['severity'] == 'Urgent' && r['status'] != 'Resolved').length})', 'Disputes (${all.where((r) => '${r['category']}'.contains('Dispute')).length})', 'Resolved (${all.where((r) => r['status'] == 'Resolved').length})'];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,8 +404,7 @@ class _UserReportsViewState extends State<UserReportsView> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
-                          setState(() => r['status'] = 'Resolved');
-                          _showSnackbar('Incident ${r['id']} resolved!', const Color(0xFF10B981));
+                          _resolve(r);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 8),
