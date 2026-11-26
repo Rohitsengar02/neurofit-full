@@ -254,3 +254,22 @@ test('admin stats, user list and user overview', async () => {
   r = await call('GET', '/api/admin/user-list', null, user.accessToken);
   assert.equal(r.status, 403);
 });
+
+test('realtime: socket gets <collection>_updated after an admin write', async () => {
+  const { io: ioc } = require('socket.io-client');
+  const http = require('http');
+  const { app } = require('../src/index');
+  const realtime = require('../src/lib/realtime');
+  const server = http.createServer(app);
+  realtime.init(server);
+  await new Promise((r) => server.listen(0, r));
+  const port = server.address().port;
+  const sock = ioc(`http://127.0.0.1:${port}`, { transports: ['websocket'] });
+  await new Promise((r) => sock.on('connect', r));
+  const got = new Promise((r) => sock.on('banners_updated', r));
+  require('../src/lib/cache').bump('banners');
+  const ev = await Promise.race([got, new Promise((_, j) => setTimeout(() => j(new Error('no event')), 3000))]);
+  assert.equal(ev.collection, 'banners');
+  sock.close();
+  await new Promise((r) => server.close(r));
+});

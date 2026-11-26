@@ -45,6 +45,7 @@ router.post('/push', requireAuth, async (req, res) => {
     );
   }
   const cur = await one('SELECT COALESCE(MAX(rev), 0) AS rev FROM user_records WHERE user_id = $1', [req.user.id]);
+  if (accepted.length) require('../lib/realtime').toUser(req.user.id, 'sync_available', { cursor: cur.rev });
   res.json({ success: true, accepted: accepted.length, rejected, cursor: cur.rev });
 });
 

@@ -35,6 +35,7 @@ async function bump(...names) {
     if (!name) continue;
     versions.set(name, (versions.get(name) || 0) + 1);
     if (redis && redis.status === 'ready') redis.incr(`ver:${name}`).catch(() => {});
+    require('./realtime').changed(name);
   }
 }
 

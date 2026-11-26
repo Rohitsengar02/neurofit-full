@@ -88,6 +88,7 @@ async function start() {
   await auth.ensureAdmin();
   require('./seed/exercises').seedIfEmpty().catch((e) => console.warn('[seed] exercises:', e.message));
   const server = app.listen(config.port, '0.0.0.0', () => console.log(`NeuroFit API listening on :${config.port}`));
+  require('./lib/realtime').init(server);
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
   const stop = () => server.close(() => pool.end().then(() => process.exit(0)));

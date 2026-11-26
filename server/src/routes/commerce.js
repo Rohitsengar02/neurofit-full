@@ -1,5 +1,6 @@
 // Orders and coupon validation.
 const express = require('express');
+const realtime = require('../lib/realtime');
 const docs = require('../lib/docs');
 const { query, one } = require('../db');
 const { requireAuth, requireAdmin, isAdmin } = require('../lib/auth');
@@ -61,6 +62,9 @@ orders.post('/', requireAuth, async (req, res) => {
     paymentStatus: body.paymentStatus || (String(body.paymentMethod || '').toLowerCase() === 'cod' ? 'Pending' : 'Paid'),
   };
   const row = await docs.upsert('orders', id, order, { ownerId: req.user.id });
+  realtime.toAdmins('order:created', { id });
+  realtime.toAdmins('admin:new_order', { id });
+  realtime.toUser(req.user.id, 'order:user_created', { id });
   // coupon usage + stock
   if (body.couponCode) {
     await query(
@@ -122,6 +126,8 @@ async function setStatus(req, res) {
   const history = Array.isArray(row.data.statusHistory) ? row.data.statusHistory : [];
   patch.statusHistory = [...history, { status: patch.orderStatus, at: new Date().toISOString() }];
   const updated = await docs.upsert('orders', row.id, patch);
+  realtime.toUser(row.owner_id, 'order:user_updated', { id: row.id, status: patch.orderStatus });
+  realtime.toAdmins('order_status_updated', { id: row.id, status: patch.orderStatus });
   if (isAdmin(req) && row.owner_id) {
     notify({ userId: row.owner_id, title: 'Order update', body: `Your order ${row.id} is now ${patch.orderStatus}`, type: 'order', refId: row.id }).catch(() => {});
   }

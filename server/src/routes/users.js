@@ -49,6 +49,7 @@ async function updateUser(uid, body, admin) {
   if (!sets.length) return loadUser(uid);
   const u = await one(`UPDATE users SET ${sets.join(', ')}, updated_at = now() WHERE id = $1 RETURNING *`, params);
   await cache.bump('users');
+  require('../lib/realtime').toUser(uid, 'user:self_updated', { uid });
   return u;
 }
 
