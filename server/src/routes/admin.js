@@ -218,6 +218,126 @@ router.get('/user-list', requireAdmin, cached(['users', 'orders', 'trainer_subsc
 });
 
 // Coaching subscriptions (the paid plans users buy), newest first.
+// Marketplace vendors = product brands. Sales come from order items joined to their product;
+// an optional doc in the "vendors" collection (same name) adds contact details and commission.
+router.get('/vendors', requireAdmin, cached(['orders', 'products', 'vendors'], 120), async (_req, res) => {
+  const BRAND = `COALESCE(NULLIF(p.data->>'brand', ''), NULLIF(it->>'brand', ''), 'NeuroFit')`;
+  const [sales, catalog, top, extra] = await Promise.all([
+    query(`SELECT ${BRAND} AS brand,
+             COALESCE(sum(COALESCE((it->>'price')::numeric, 0) * COALESCE((it->>'quantity')::int, 1)) FILTER (WHERE COALESCE(o.data->>'orderStatus','') NOT IN ('Cancelled','Returned')), 0) AS gross,
+             count(DISTINCT o.id)::int AS orders,
+             count(DISTINCT o.id) FILTER (WHERE o.data->>'orderStatus' IN ('Cancelled','Returned'))::int AS refunded,
+             count(DISTINCT o.id) FILTER (WHERE o.data->>'orderStatus' = 'Delivered')::int AS delivered,
+             COALESCE(avg(EXTRACT(EPOCH FROM (o.updated_at - o.created_at)) / 86400) FILTER (WHERE o.data->>'orderStatus' = 'Delivered'), 0) AS fulfil_days
+           FROM docs o
+           CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(o.data->'items') = 'array' THEN o.data->'items' ELSE '[]'::jsonb END) it
+           LEFT JOIN docs p ON p.collection = 'products' AND p.id = COALESCE(it->>'productId', it->>'id')
+           WHERE o.collection = 'orders' AND COALESCE(it->>'price', '0') ~ '^[0-9.]+$' AND COALESCE(it->>'quantity', '1') ~ '^[0-9]+$'
+           GROUP BY 1`),
+    query(`SELECT COALESCE(NULLIF(data->>'brand', ''), 'NeuroFit') AS brand, count(*)::int AS skus,
+             mode() WITHIN GROUP (ORDER BY COALESCE(data->>'categoryName', data->>'category', 'General')) AS category,
+             max(COALESCE(data->>'mainImageUrl', data->>'imageUrl', data->>'image', '')) AS image,
+             COALESCE(avg((data->>'rating')::numeric) FILTER (WHERE data->>'rating' ~ '^[0-9.]+$'), 0) AS rating,
+             COALESCE(sum((data->>'reviewCount')::int) FILTER (WHERE data->>'reviewCount' ~ '^[0-9]+$'), 0)::int AS reviews,
+             min(created_at) AS since
+           FROM docs WHERE collection = 'products' GROUP BY 1`),
+    query(`SELECT ${BRAND} AS brand, p.id, max(COALESCE(p.data->>'name', p.data->>'title', it->>'name', it->>'title')) AS name,
+             max(COALESCE(p.data->>'mainImageUrl', p.data->>'imageUrl', it->>'image', '')) AS image,
+             max(COALESCE(p.data->>'price', it->>'price', '0')) AS price, max(COALESCE(p.data->>'stock', '')) AS stock,
+             sum(COALESCE((it->>'quantity')::int, 1))::int AS sold
+           FROM docs o
+           CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(o.data->'items') = 'array' THEN o.data->'items' ELSE '[]'::jsonb END) it
+           LEFT JOIN docs p ON p.collection = 'products' AND p.id = COALESCE(it->>'productId', it->>'id')
+           WHERE o.collection = 'orders' AND COALESCE(it->>'quantity', '1') ~ '^[0-9]+$'
+           GROUP BY 1, 2 ORDER BY sold DESC LIMIT 300`),
+    query(`SELECT id, data FROM docs WHERE collection = 'vendors'`),
+  ]);
+  const by = new Map();
+  const get = (b) => by.get(b) || by.set(b, { name: b }).get(b);
+  for (const r of catalog.rows) Object.assign(get(r.brand), { skus: r.skus, category: r.category, image: r.image, rating: Number(r.rating), reviews: r.reviews, since: r.since });
+  for (const r of sales.rows) Object.assign(get(r.brand), { gross: Number(r.gross), orders: r.orders, refunded: r.refunded, delivered: r.delivered, fulfilDays: +Number(r.fulfil_days).toFixed(1) });
+  for (const r of top.rows) {
+    const v = get(r.brand);
+    (v.topProducts = v.topProducts || []).length < 3 && v.topProducts.push({ id: r.id, name: r.name, image: r.image, price: Number(r.price) || 0, stock: r.stock === '' ? null : Number(r.stock), sold: r.sold });
+  }
+  for (const { id, data } of extra.rows) {
+    const key = data.name || data.storeName || data.brand;
+    if (key) Object.assign(get(key), { id, ...data, name: key });
+  }
+  const list = [...by.values()].map((v) => {
+    const rate = Number(v.commissionRate ?? v.commission ?? 10);
+    const gross = v.gross || 0;
+    return { skus: 0, gross: 0, orders: 0, refunded: 0, delivered: 0, fulfilDays: 0, rating: 0, reviews: 0, topProducts: [], category: 'General', image: '',
+      ...v, commissionRate: rate, commissionEarned: Math.round((gross * rate) / 100), refundRate: v.orders ? +((v.refunded / v.orders) * 100).toFixed(1) : 0,
+      status: v.status || 'Verified' };
+  }).sort((a, b) => b.gross - a.gross);
+  res.json({ success: true, data: list });
+});
+
+// Customers who placed orders, ranked by spend, with their latest orders. One query, capped.
+router.get('/customers', requireAdmin, cached(['orders', 'users'], 60), async (req, res) => {
+  const { userJson } = require('../lib/auth');
+  const docs = require('../lib/docs');
+  const limit = Math.min(Number(req.query.limit) || 200, 1000);
+  const agg = await query(`SELECT owner_id, count(*)::int AS n,
+      COALESCE(sum((data->>'totalAmount')::numeric) FILTER (WHERE data->>'totalAmount' ~ '^[0-9.]+$'), 0) AS spend
+    FROM docs WHERE collection = 'orders' AND owner_id IS NOT NULL GROUP BY 1 ORDER BY spend DESC LIMIT $1`, [limit]);
+  const ids = agg.rows.map((r) => r.owner_id);
+  if (!ids.length) return res.json({ success: true, data: [], orders: [] });
+  const [users, orders] = await Promise.all([
+    query('SELECT * FROM users WHERE id = ANY($1)', [ids]),
+    query(`SELECT * FROM (SELECT *, row_number() OVER (PARTITION BY owner_id ORDER BY created_at DESC) AS rn FROM docs WHERE collection = 'orders' AND owner_id = ANY($1)) x WHERE rn <= 10`, [ids]),
+  ]);
+  res.json({
+    success: true,
+    data: users.rows.map((u) => ({ ...userJson(u), city: (u.addresses && u.addresses[0] && u.addresses[0].city) || (u.profile && u.profile.city) || '' })),
+    orders: orders.rows.map((r) => ({ ...docs.toItem(r, 'orderId'), uid: r.owner_id })),
+  });
+});
+
+// Admin inbox: things waiting on an admin, built live from real rows (no separate feed to keep in sync).
+router.get('/inbox', requireAdmin, cached(['trainers', 'orders', 'users', 'reports', 'trainer_subscriptions'], 20), async (_req, res) => {
+  const [trainers, orders, verifs, reports, subs] = await Promise.all([
+    query(`SELECT id, data, created_at FROM docs WHERE collection = 'trainers' AND COALESCE(data->>'status', 'pending') IN ('pending', 'applied', 'review') ORDER BY created_at DESC LIMIT 20`),
+    query(`SELECT id, data, created_at FROM docs WHERE collection = 'orders' AND COALESCE(data->>'orderStatus', 'Pending') IN ('Pending', 'Placed', 'Confirmed', 'Processing', 'Packed') ORDER BY created_at DESC LIMIT 20`),
+    query(`SELECT id, name, photo_url, profile, updated_at FROM users WHERE NOT is_verified AND profile->>'verificationStatus' IN ('pending', 'submitted') ORDER BY updated_at DESC LIMIT 20`),
+    query(`SELECT id, data, created_at FROM docs WHERE collection = 'reports' AND COALESCE(data->>'status', 'open') IN ('open', 'pending') ORDER BY created_at DESC LIMIT 20`),
+    query(`SELECT id, data, created_at FROM docs WHERE collection = 'trainer_subscriptions' AND created_at > now() - interval '3 days' ORDER BY created_at DESC LIMIT 10`),
+  ]);
+  const items = [];
+  for (const r of trainers.rows) {
+    const d = r.data;
+    items.push({ id: `tr_${r.id}`, refId: r.id, kind: 'trainer', at: r.created_at, status: 'Pending', avatar: d.photo || d.photoUrl || d.image || '',
+      title: `New Trainer Application: ${d.name || 'Coach'}`, subtitle: [d.specialty || d.category, d.experience ? `${d.experience} yrs exp` : null].filter(Boolean).join(' • ') || 'Waiting for review',
+      meta: `Applicant ID: #${r.id}` });
+  }
+  for (const r of orders.rows) {
+    const d = r.data;
+    const items0 = Array.isArray(d.items) ? d.items : [];
+    items.push({ id: `or_${r.id}`, refId: r.id, kind: 'order', at: r.created_at, status: 'Pending', avatar: (items0[0] && (items0[0].image || items0[0].imageUrl)) || '',
+      title: `New Order: ₹${Number(d.totalAmount || 0).toLocaleString('en-IN')} Placed`, subtitle: `Order #${r.id} by ${d.customerName || 'Customer'} • ${items0.map((i) => `${i.quantity || 1}x ${i.name || i.title || 'Item'}`).slice(0, 3).join(', ')}`,
+      meta: `Payment: ${d.paymentMethod || 'Not set'} • ${d.orderStatus || 'Pending'}` });
+  }
+  for (const u of verifs.rows) {
+    items.push({ id: `ve_${u.id}`, refId: u.id, kind: 'verification', at: u.updated_at, status: 'Pending', avatar: u.photo_url || '',
+      title: `User Verification Request: ${u.name || 'User'}`, subtitle: 'Documents uploaded for verification', meta: `User ID: #${u.id}` });
+  }
+  for (const r of reports.rows) {
+    const d = r.data;
+    items.push({ id: `rp_${r.id}`, refId: r.id, kind: 'report', at: r.created_at, status: 'Pending', avatar: '',
+      title: d.title || `Reported ${d.category || 'content'}`, subtitle: d.description || `Flagged by ${d.count || 1} user(s)`,
+      meta: `Report: #${r.id}${d.autoHidden ? ' • Auto-Hidden' : ''}` });
+  }
+  for (const r of subs.rows) {
+    const d = r.data;
+    items.push({ id: `su_${r.id}`, refId: r.id, kind: 'subscription', at: r.created_at, status: 'Completed', avatar: d.userPhoto || '',
+      title: `New Subscription: ${d.userName || 'Member'}`, subtitle: `${d.planName || 'Plan'} with ${d.trainerName || 'coach'} for ₹${Number(d.amount || 0).toLocaleString('en-IN')}`,
+      meta: d.paymentId ? `Payment #${d.paymentId}` : (d.complimentary ? 'Complimentary' : '') });
+  }
+  items.sort((a, b) => new Date(b.at) - new Date(a.at));
+  res.json({ success: true, data: items });
+});
+
 router.get('/subscriptions', requireAdmin, cached(['trainer_subscriptions', 'users'], 30), async (_req, res) => {
   const { rows } = await query(
     `SELECT s.id, s.owner_id, s.data, s.created_at, u.name, u.email, u.phone, u.photo_url

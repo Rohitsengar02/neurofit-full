@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:neurofitadmin/constants/api_constants.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../services/category_backend_service.dart';
 import 'skeleton_loader.dart';
+import 'net_or_asset_image.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
 
 // =============================================================
 // 1. MARKETPLACE VENDORS VIEW WITH BEAUTIFUL CARDS & 4-TAB SLIDER
@@ -29,111 +30,81 @@ class MarketplaceVendorsView extends StatefulWidget {
 class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
   String _searchQuery = '';
 
-  final List<Map<String, dynamic>> _vendorsList = [
-    {
-      'id': 'VEN-101',
-      'name': 'NutriFit Official Partner',
-      'category': 'Supplements & Nutrition',
-      'tier': '⭐ Top Brand',
-      'tierColor': const Color(0xFF10B981),
-      'tierBg': const Color(0xFFECFDF5),
-      'rating': '4.95 ★',
-      'reviews': '1.4K reviews',
-      'skusCount': 184,
-      'grossSales': '₹14.20L',
-      'commission': '12% Fee',
-      'commissionEarned': '₹1,70,400',
-      'ordersFulfilled': '3,840 Orders',
-      'refundRate': '0.6%',
-      'avgFulfillmentTime': '1.2 Days',
-      'contactPerson': 'Sunil Mehta (Head)',
-      'email': 'sunil.mehta@nutrifit.com',
-      'phone': '+91 98234 56789',
-      'status': 'Verified',
-      'statusColor': const Color(0xFF10B981),
-      'img': 'assets/images/workout_banner_1.png',
+  List<Map<String, dynamic>> _vendorsList = [];
+  Map<String, num> _kpi = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final j = await Api.get('/admin/vendors');
+      final raw = [for (final e in (j['data'] as List? ?? const [])) Map<String, dynamic>.from(e as Map)];
+      num gross = 0, fees = 0, ratingSum = 0, rated = 0, orders = 0, delivered = 0, newOnes = 0;
+      final monthAgo = DateTime.now().subtract(const Duration(days: 30));
+      for (final v in raw) {
+        gross += (v['gross'] as num?) ?? 0;
+        fees += (v['commissionEarned'] as num?) ?? 0;
+        if (((v['rating'] as num?) ?? 0) > 0) { ratingSum += v['rating'] as num; rated++; }
+        orders += (v['orders'] as num?) ?? 0;
+        delivered += (v['delivered'] as num?) ?? 0;
+        final since = DateTime.tryParse((v['since'] ?? '').toString());
+        if (since != null && since.isAfter(monthAgo)) newOnes++;
+      }
+      if (!mounted) return;
+      setState(() {
+        _vendorsList = raw.map(_vendorRow).toList();
+        _kpi = {'count': raw.length, 'gross': gross, 'fees': fees, 'rating': rated == 0 ? 0 : ratingSum / rated, 'sla': orders == 0 ? 0 : delivered / orders * 100, 'new': newOnes, 'cut': gross == 0 ? 0 : fees / gross * 100};
+      });
+    } catch (_) {}
+  }
+
+  static Map<String, dynamic> _vendorRow(Map<String, dynamic> v) {
+    final gross = (v['gross'] as num?) ?? 0;
+    final rating = (v['rating'] as num?) ?? 0;
+    final top = gross >= 500000 ? 0 : gross >= 100000 ? 1 : 2;
+    const tiers = ['👑 VIP Supplier', '⭐ Top Brand', '⚡ Official Store'];
+    const colors = [Color(0xFFF59E0B), Color(0xFF10B981), Color(0xFF8B5CF6)];
+    const bgs = [Color(0xFFFFFBEB), Color(0xFFECFDF5), Color(0xFFF5F3FF)];
+    final status = (v['status'] ?? 'Verified').toString();
+    return {
+      'id': (v['id'] ?? v['name']).toString(),
+      'name': (v['name'] ?? 'Store').toString(),
+      'category': (v['category'] ?? 'General').toString(),
+      'tier': tiers[top],
+      'tierColor': colors[top],
+      'tierBg': bgs[top],
+      'rating': rating > 0 ? '${rating.toStringAsFixed(2)} ★' : 'New',
+      'reviews': '${fmtShort((v['reviews'] as num?) ?? 0)} reviews',
+      'skusCount': (v['skus'] as num?) ?? 0,
+      'grossSales': fmtInrShort(gross),
+      'commission': '${((v['commissionRate'] as num?) ?? 10).toStringAsFixed(0)}% Fee',
+      'commissionEarned': fmtInr((v['commissionEarned'] as num?) ?? 0),
+      'ordersFulfilled': '${fmtInt((v['delivered'] as num?) ?? 0)} Orders',
+      'refundRate': '${((v['refundRate'] as num?) ?? 0).toStringAsFixed(1)}%',
+      'avgFulfillmentTime': '${((v['fulfilDays'] as num?) ?? 0).toStringAsFixed(1)} Days',
+      'contactPerson': (v['contactPerson'] ?? v['ownerName'] ?? 'Not added').toString(),
+      'email': (v['email'] ?? '').toString(),
+      'phone': (v['phone'] ?? '').toString(),
+      'status': status,
+      'statusColor': status.toLowerCase() == 'verified' || status.toLowerCase() == 'active' ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+      'img': CategoryBackendService.getDisplayableImageUrl((v['logo'] ?? v['image'] ?? '').toString()),
       'topProducts': [
-        {
-          'name': '100% Whey Protein Isolate (2kg)',
-          'sales': '1.8K Sold',
-          'price': '₹4,499',
-          'stock': '142 in stock',
-          'img': 'assets/images/workout_banner_1.png',
-        },
-        {
-          'name': 'Micronized Creatine Monohydrate (300g)',
-          'sales': '3.1K Sold',
-          'price': '₹999',
-          'stock': '85 in stock',
-          'img': 'assets/images/hero_banner_4.png',
-        },
+        for (final p in (v['topProducts'] as List? ?? const []))
+          if (p is Map)
+            {
+              'name': (p['name'] ?? 'Product').toString(),
+              'sales': '${fmtShort((p['sold'] as num?) ?? 0)} Sold',
+              'price': fmtInr((p['price'] as num?) ?? 0),
+              'stock': p['stock'] == null ? 'Stock not set' : '${p['stock']} in stock',
+              'img': CategoryBackendService.getDisplayableImageUrl((p['image'] ?? '').toString()),
+            },
       ],
-    },
-    {
-      'id': 'VEN-102',
-      'name': 'IronGrip Equipment Hub',
-      'category': 'Weights & Benches',
-      'tier': '👑 VIP Supplier',
-      'tierColor': const Color(0xFFF59E0B),
-      'tierBg': const Color(0xFFFFFBEB),
-      'rating': '4.88 ★',
-      'reviews': '890 reviews',
-      'skusCount': 96,
-      'grossSales': '₹8.90L',
-      'commission': '15% Fee',
-      'commissionEarned': '₹1,33,500',
-      'ordersFulfilled': '1,120 Orders',
-      'refundRate': '0.9%',
-      'avgFulfillmentTime': '2.1 Days',
-      'contactPerson': 'Rajesh Singhania',
-      'email': 'support@irongrip.in',
-      'phone': '+91 91234 78901',
-      'status': 'Verified',
-      'statusColor': const Color(0xFF10B981),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-      'topProducts': [
-        {
-          'name': 'Hexagon Rubber Dumbbells (15kg)',
-          'sales': '640 Sold',
-          'price': '₹3,299',
-          'stock': '48 in stock',
-          'img': 'assets/images/athlete_transform_1787825621309.jpg',
-        },
-      ],
-    },
-    {
-      'id': 'VEN-103',
-      'name': 'NeuroFit Apparel Store',
-      'category': 'Activewear & Gear',
-      'tier': '⚡ Official Store',
-      'tierColor': const Color(0xFF8B5CF6),
-      'tierBg': const Color(0xFFF5F3FF),
-      'rating': '4.92 ★',
-      'reviews': '1.1K reviews',
-      'skusCount': 142,
-      'grossSales': '₹6.40L',
-      'commission': '10% Fee',
-      'commissionEarned': '₹64,000',
-      'ordersFulfilled': '2,490 Orders',
-      'refundRate': '1.1%',
-      'avgFulfillmentTime': '1.0 Days',
-      'contactPerson': 'Ananya Roy',
-      'email': 'merch@neurofit.app',
-      'phone': '+91 87654 32109',
-      'status': 'Verified',
-      'statusColor': const Color(0xFF10B981),
-      'img': 'assets/images/hero_banner_1.png',
-      'topProducts': [
-        {
-          'name': 'Seamless Dry-Fit Gym T-Shirt',
-          'sales': '2.4K Sold',
-          'price': '₹1,299',
-          'stock': '210 in stock',
-          'img': 'assets/images/hero_banner_1.png',
-        },
-      ],
-    },
-  ];
+    };
+  }
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length
@@ -183,32 +154,32 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
     final kpis = [
       {
         'title': 'Active Vendors',
-        'val': '14 Stores',
-        'growth': '+2 Onboarded',
+        'val': '${fmtInt(_kpi['count'] ?? 0)} Stores',
+        'growth': '+${fmtInt(_kpi['new'] ?? 0)} Onboarded',
         'icon': Icons.store_mall_directory_rounded,
         'color': const Color(0xFF16A34A),
         'bg': const Color(0xFFECFDF5),
       },
       {
         'title': 'Total Vendor GMV',
-        'val': '₹29.5 Lakhs',
-        'growth': '+21.4% growth',
+        'val': fmtInrShort(_kpi['gross'] ?? 0),
+        'growth': 'Lifetime GMV',
         'icon': Icons.account_balance_wallet_rounded,
         'color': const Color(0xFF3B82F6),
         'bg': const Color(0xFFEFF6FF),
       },
       {
         'title': 'Platform Fees',
-        'val': '₹3.67 Lakhs',
-        'growth': '12.4% avg cut',
+        'val': fmtInrShort(_kpi['fees'] ?? 0),
+        'growth': '${(_kpi['cut'] ?? 0).toStringAsFixed(1)}% avg cut',
         'icon': Icons.monetization_on_rounded,
         'color': const Color(0xFFF59E0B),
         'bg': const Color(0xFFFFFBEB),
       },
       {
         'title': 'Vendor Rating',
-        'val': '4.91 ★',
-        'growth': '99.2% SLA met',
+        'val': (_kpi['rating'] ?? 0) > 0 ? '${(_kpi['rating'] ?? 0).toStringAsFixed(2)} ★' : 'New',
+        'growth': '${(_kpi['sla'] ?? 0).toStringAsFixed(1)}% delivered',
         'icon': Icons.star_rounded,
         'color': const Color(0xFF8B5CF6),
         'bg': const Color(0xFFF5F3FF),
@@ -363,7 +334,7 @@ class _MarketplaceVendorsViewState extends State<MarketplaceVendorsView> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(14),
-                        child: Image.asset(
+                        child: NetOrAssetImage(
                           v['img'] as String,
                           width: 48,
                           height: 48,
@@ -619,7 +590,7 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet>
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: Image.asset(
+                  child: NetOrAssetImage(
                     v['img'] as String,
                     width: 52,
                     height: 52,
@@ -760,7 +731,7 @@ class _VendorDetailBottomSheetState extends State<_VendorDetailBottomSheet>
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.asset(
+                            child: NetOrAssetImage(
                               p['img'] as String,
                               width: 42,
                               height: 42,
@@ -969,6 +940,7 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
             .build(),
       );
 
+      _socket?.onConnect((_) => _socket?.emit('join_admin_room'));
       _socket?.connect();
 
       _socket?.on('user:updated', (_) => _fetchRealCustomers(silent: true));
@@ -984,46 +956,13 @@ class _MarketplaceCustomersViewState extends State<MarketplaceCustomersView> {
     List<Map<String, dynamic>> fetchedUsers = [];
     List<Map<String, dynamic>> fetchedOrders = [];
 
-    final candidateUsersUrls = ApiConstants.candidateBaseUrls
-        .map((b) => '$b/api/users')
-        .toList();
-    final candidateOrdersUrls = ApiConstants.candidateBaseUrls
-        .map((b) => '$b/api/orders')
-        .toList();
-
-    // 1. Fetch Users
-    for (final url in candidateUsersUrls) {
-      try {
-        final res = await http
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 3));
-        if (res.statusCode == 200) {
-          final body = jsonDecode(res.body);
-          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedUsers = raw
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
-          break;
-        }
-      } catch (_) {}
-    }
-
-    // 2. Fetch Orders
-    for (final url in candidateOrdersUrls) {
-      try {
-        final res = await http
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 3));
-        if (res.statusCode == 200) {
-          final body = jsonDecode(res.body);
-          final raw = (body['data'] ?? body) as List<dynamic>? ?? [];
-          fetchedOrders = raw
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
-          break;
-        }
-      } catch (_) {}
-    }
+    // One capped call: customers ranked by spend with their latest orders
+    // (the server aggregates, so this stays fast with lakhs of users).
+    try {
+      final j = await Api.get('/admin/customers?limit=300');
+      fetchedUsers = [for (final e in (j['data'] as List? ?? const [])) Map<String, dynamic>.from(e as Map)];
+      fetchedOrders = [for (final e in (j['orders'] as List? ?? const [])) Map<String, dynamic>.from(e as Map)];
+    } catch (_) {}
 
     // 3. Map orders by User UID or Phone Number
     final Map<String, List<Map<String, dynamic>>> ordersByUid = {};

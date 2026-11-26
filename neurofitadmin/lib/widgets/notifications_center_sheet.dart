@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import '../services/category_backend_service.dart';
+import 'net_or_asset_image.dart';
 
 class NotificationsCenterSheet extends StatefulWidget {
   const NotificationsCenterSheet({super.key});
@@ -10,73 +16,83 @@ class NotificationsCenterSheet extends StatefulWidget {
 class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
   String _selectedFilter = 'All';
 
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'id': 'NOTIF-1',
-      'type': 'Trainer Application',
-      'title': 'New Trainer Application: Coach Ryan Cooper',
-      'subtitle': 'Applied for Senior Strength & Conditioning Specialist • ACE-CPT & CSCS certified (6 yrs exp)',
-      'time': '10 mins ago',
-      'category': 'Applications',
-      'color': const Color(0xFFF59E0B),
-      'icon': Icons.sports_gymnastics_rounded,
-      'avatar': 'assets/images/trainers_hero_banner.jpg',
-      'status': 'Pending', // 'Pending', 'Approved', 'Rejected'
-      'meta': 'Applicant ID: #TR-8821 • Certifications Verified',
-    },
-    {
-      'id': 'NOTIF-2',
-      'type': 'Store Order',
-      'title': 'High Volume Order: ₹12,450 Placed',
-      'subtitle': 'Order #ORD-9942 by Priya Sharma • 4x NutriFit Hydro Whey & Creatine Monohydrate',
-      'time': '25 mins ago',
-      'category': 'Orders',
-      'color': const Color(0xFF3B82F6),
-      'icon': Icons.shopping_bag_rounded,
-      'avatar': 'assets/images/nutrifit_whey_protein.jpg',
-      'status': 'Pending', // 'Pending', 'Dispatched'
-      'meta': 'Vendor: MuscleTech Direct • Express Courier',
-    },
-    {
-      'id': 'NOTIF-3',
-      'type': 'ID Verification',
-      'title': 'User Verification Request: Dr. Vikram Seth',
-      'subtitle': 'National Government Passport & Medical Fitness License uploaded for verification',
-      'time': '1 hour ago',
-      'category': 'Verifications',
-      'color': const Color(0xFF10B981),
-      'icon': Icons.verified_user_rounded,
-      'avatar': 'assets/images/athlete_transform.jpg',
-      'status': 'Pending', // 'Pending', 'Verified', 'Rescan Requested'
-      'meta': 'User ID: #ATH-1092 • VIP Platinum Member',
-    },
-    {
-      'id': 'NOTIF-4',
-      'type': 'Content Moderation',
-      'title': 'Reported Comment in Community Forum',
-      'subtitle': 'Flagged by 3 athletes for promotional spam in "Strength & Hypertrophy" discussion thread',
-      'time': '3 hours ago',
-      'category': 'Reports',
-      'color': const Color(0xFFEF4444),
-      'icon': Icons.report_problem_rounded,
-      'avatar': 'assets/images/hero_banner_2.png',
-      'status': 'Pending', // 'Pending', 'Resolved', 'Dismissed'
-      'meta': 'Report Ticket: #TKT-4412 • Auto-Hidden',
-    },
-    {
-      'id': 'NOTIF-5',
-      'type': 'Subscription Alert',
-      'title': 'Annual Pass Renewal: Rhea Singhania',
-      'subtitle': 'NeuroFit Elite Annual Pass successfully auto-debited for ₹7,999 / year',
-      'time': '5 hours ago',
-      'category': 'Billing',
-      'color': const Color(0xFF8B5CF6),
-      'icon': Icons.card_membership_rounded,
-      'avatar': 'assets/images/category_yoga_model.png',
-      'status': 'Completed',
-      'meta': 'Auto-Pay HDFC • Invoice #INV-2025-884',
-    },
-  ];
+  List<Map<String, dynamic>> _notifications = [];
+  Set<String> _dismissed = {};
+
+  static const _kinds = {
+    'trainer': ['Trainer Application', 'Applications', Color(0xFFF59E0B), Icons.sports_gymnastics_rounded],
+    'order': ['Store Order', 'Orders', Color(0xFF3B82F6), Icons.shopping_bag_rounded],
+    'verification': ['ID Verification', 'Verifications', Color(0xFF10B981), Icons.verified_user_rounded],
+    'report': ['Content Moderation', 'Reports', Color(0xFFEF4444), Icons.report_problem_rounded],
+    'subscription': ['Subscription Alert', 'Billing', Color(0xFF8B5CF6), Icons.card_membership_rounded],
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _dismissed = (prefs.getStringList('admin_inbox_dismissed') ?? const []).toSet();
+      final j = await Api.get('/admin/inbox');
+      final list = <Map<String, dynamic>>[];
+      for (final e in (j['data'] as List? ?? const [])) {
+        final m = Map<String, dynamic>.from(e as Map);
+        if (_dismissed.contains(m['id'])) continue;
+        final k = _kinds[m['kind']] ?? _kinds['report']!;
+        list.add({
+          ...m,
+          'type': k[0], 'category': k[1], 'color': k[2], 'icon': k[3],
+          'time': timeAgo(m['at']?.toString()),
+          'avatar': CategoryBackendService.getDisplayableImageUrl((m['avatar'] ?? '').toString()),
+          'meta': (m['meta'] ?? '').toString(),
+        });
+      }
+      if (mounted) setState(() => _notifications = list);
+    } catch (_) {}
+  }
+
+  Future<void> _dismissAll() async {
+    for (final n in _notifications) {
+      if (n['status'] == 'Pending') n['status'] = 'Dismissed';
+      _dismissed.add(n['id'].toString());
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('admin_inbox_dismissed', _dismissed.toList().take(500).toList());
+    } catch (_) {}
+  }
+
+  /// Runs the real action for a card, then shows the new status.
+  Future<void> _act(Map<String, dynamic> item, String status) async {
+    final id = item['refId'].toString();
+    try {
+      switch (item['kind']) {
+        case 'trainer':
+          await AdminTrainers.I.setStatus(id, status.startsWith('Approved') ? 'approve' : 'reject');
+          break;
+        case 'order':
+          await Api.send('PATCH', '/orders/$id/status', {'orderStatus': 'Shipped'});
+          break;
+        case 'verification':
+          await Api.send('PUT', '/users/$id', status.startsWith('Verified')
+              ? {'isVerified': true, 'verificationStatus': 'approved', 'verifiedAt': DateTime.now().toUtc().toIso8601String()}
+              : {'verificationStatus': 'rescan_requested'});
+          break;
+        case 'report':
+          await Api.send('PATCH', '/community/admin/reports/$id', {'status': 'resolved'});
+          break;
+      }
+      if (mounted) setState(() => item['status'] = status);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update: $e'), backgroundColor: const Color(0xFFEF4444)));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +200,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () {
+                    _dismissAll();
                     setState(() {
                       for (var n in _notifications) {
                         if (n['status'] == 'Pending') n['status'] = 'Dismissed';
@@ -368,7 +385,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(
+                  child: NetOrAssetImage(
                     item['avatar'] as String,
                     fit: BoxFit.cover,
                     errorBuilder: (c, e, s) => Icon(item['icon'] as IconData, color: color),
@@ -440,7 +457,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                 elevation: 0,
               ),
               onPressed: () {
-                setState(() => item['status'] = 'Approved ✓');
+                _act(item, 'Approved ✓');
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('${item['title']} approved successfully!'), backgroundColor: const Color(0xFF10B981)),
                 );
@@ -458,7 +475,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () {
-                setState(() => item['status'] = 'Rejected ✕');
+                _act(item, 'Rejected ✕');
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Application rejected.'), backgroundColor: const Color(0xFFEF4444)),
                 );
@@ -483,7 +500,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                 elevation: 0,
               ),
               onPressed: () {
-                setState(() => item['status'] = 'Dispatched 🚚');
+                _act(item, 'Dispatched 🚚');
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Order marked as packed & dispatched!'), backgroundColor: Color(0xFF3B82F6)),
                 );
@@ -508,7 +525,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                 elevation: 0,
               ),
               onPressed: () {
-                setState(() => item['status'] = 'Verified ✓');
+                _act(item, 'Verified ✓');
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('User identity verified and verified badge granted!'), backgroundColor: Color(0xFF10B981)),
                 );
@@ -525,7 +542,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () {
-                setState(() => item['status'] = 'Rescan Requested');
+                _act(item, 'Rescan Requested');
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Requested rescan from athlete.'), backgroundColor: Color(0xFFF59E0B)),
                 );
@@ -548,7 +565,7 @@ class _NotificationsCenterSheetState extends State<NotificationsCenterSheet> {
               elevation: 0,
             ),
             onPressed: () {
-              setState(() => item['status'] = 'Resolved ✓');
+              _act(item, 'Resolved ✓');
             },
             child: const Text('Resolve Ticket', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
           ),

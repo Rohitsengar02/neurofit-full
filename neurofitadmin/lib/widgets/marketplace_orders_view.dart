@@ -63,6 +63,7 @@ class _MarketplaceOrdersViewState extends State<MarketplaceOrdersView> {
         IO.OptionBuilder().setTransports(['websocket', 'polling']).disableAutoConnect().build(),
       );
 
+      _socket?.onConnect((_) => _socket?.emit('join_admin_room'));
       _socket?.connect();
 
       _socket?.on('order:created', (data) {

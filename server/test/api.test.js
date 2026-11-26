@@ -246,6 +246,12 @@ test('admin stats, user list and user overview', async () => {
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.data.users.heatmap.length, 7); assert.equal(r.body.data.revenue.monthly.length, 12);
   assert.ok(r.body.data.revenue.total > 0);
   assert.ok(r.body.data.marketplace.views7 >= 2); assert.ok(r.body.data.marketplace.recent.length >= 1); assert.ok('in_stock' in r.body.data.marketplace.inventory);
+  r = await call('GET', '/api/admin/vendors', null, admin.accessToken);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.ok(Array.isArray(r.body.data));
+  r = await call('GET', '/api/admin/inbox', null, admin.accessToken);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.ok(Array.isArray(r.body.data));
+  r = await call('GET', '/api/admin/customers', null, admin.accessToken);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.ok(r.body.data.some((c) => c.uid === user.data.uid)); assert.ok(r.body.orders.length >= 1);
   r = await call('GET', '/api/admin/user-list?segment=new', null, admin.accessToken);
   assert.equal(r.status, 200);
   const me = r.body.data.find((u) => u.uid === user.data.uid);

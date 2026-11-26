@@ -233,9 +233,9 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> with Live
                         const SizedBox(width: 8),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('Top Trainer • Amit Sharma', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                            Text('152 Sessions • 4.9★ Rating', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                          children: [
+                            Text('Top Trainer • ${ins.list('trainers', 'top').isEmpty ? 'None yet' : ins.list('trainers', 'top').first['name']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                            Text(ins.list('trainers', 'top').isEmpty ? 'No sessions yet' : '${fmtInt((ins.list('trainers', 'top').first['clients'] as num?) ?? 0)} Clients • ${(((ins.list('trainers', 'top').first['rating'] as num?) ?? 0)).toStringAsFixed(1)}★ Rating', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
                           ],
                         ),
                       ],
