@@ -240,6 +240,9 @@ test('admin stats', async () => {
 test('admin stats, user list and user overview', async () => {
   let r = await call('GET', '/api/admin/stats', null, admin.accessToken);
   assert.equal(r.status, 200); assert.ok(r.body.data.users.total >= 1);
+  r = await call('GET', '/api/admin/insights', null, admin.accessToken);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.data.users.heatmap.length, 7); assert.equal(r.body.data.revenue.monthly.length, 12);
+  assert.ok(r.body.data.revenue.total > 0);
   r = await call('GET', '/api/admin/user-list?segment=new', null, admin.accessToken);
   assert.equal(r.status, 200);
   const me = r.body.data.find((u) => u.uid === user.data.uid);

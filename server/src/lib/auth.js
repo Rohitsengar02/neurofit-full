@@ -63,12 +63,14 @@ async function revokeRefresh(token) {
 
 // Throttle "last active" writes to one per user per 5 minutes.
 const lastSeen = new Map();
-function touch(userId) {
+function touch(userId, platform) {
   const now = Date.now();
   if ((lastSeen.get(userId) || 0) > now - 5 * 60 * 1000) return;
   lastSeen.set(userId, now);
   if (lastSeen.size > 200_000) lastSeen.clear();
-  query('UPDATE users SET last_active_at = now() WHERE id = $1', [userId]).catch(() => {});
+  const p = ['android', 'ios', 'web'].includes(platform) ? platform : null;
+  query(p ? `UPDATE users SET last_active_at = now(), profile = jsonb_set(profile, '{platform}', to_jsonb($2::text)) WHERE id = $1`
+          : 'UPDATE users SET last_active_at = now() WHERE id = $1', p ? [userId, p] : [userId]).catch(() => {});
 }
 
 /** Reads the Bearer token if present. Never rejects. */
@@ -78,7 +80,7 @@ function optionalAuth(req, _res, next) {
     try {
       const p = jwt.verify(h.slice(7), config.jwtSecret);
       req.user = { id: p.sub, role: p.role };
-      touch(p.sub);
+      touch(p.sub, String(req.headers['x-client-platform'] || '').toLowerCase());
     } catch (_) {
       req.authError = 'invalid_token';
     }

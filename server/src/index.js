@@ -56,6 +56,7 @@ app.get('/api/config', (_req, res) => res.json({
 
 app.use('/api/auth', auth.router);
 app.use('/api/admin/trainers', require('./routes/trainers').admin);
+app.use('/api/admin/insights', require('./routes/insights').router);
 app.use('/api/admin', require('./routes/admin').router);
 app.use('/api/users', require('./routes/users').router);
 app.use('/api/orders', commerce.orders);
