@@ -7,10 +7,18 @@ const { requireAuth, requireAdmin, isAdmin } = require('../lib/auth');
 
 async function notify({ userId = null, audience = 'user', title, body, type = 'info', refId = null, imageUrl = null }) {
   const id = docs.newId('ntf');
-  return docs.upsert('notifications', id, {
+  const row = await docs.upsert('notifications', id, {
     notificationId: id, title, body, message: body, type, refId, imageUrl,
     audience: userId ? 'user' : audience, isRead: false,
   }, { ownerId: userId });
+  // Live push to the open app (chat replies, live sessions, plan updates...).
+  try {
+    const rt = require('../lib/realtime');
+    const payload = { id, title, body, type, refId };
+    if (userId) rt.toUser(userId, 'notification:new', payload);
+    else if (audience === 'admins') rt.toAdmins('notification:new', payload);
+  } catch (_) {}
+  return row;
 }
 
 const router = express.Router();

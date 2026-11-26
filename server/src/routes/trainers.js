@@ -326,8 +326,27 @@ panel.post('/reviews/:id/reply', async (req, res) => {
 
 panel.get('/transactions', async (req, res) => {
   const row = await myTrainer(req, res); if (!row) return;
-  const rows = await docs.list('trainer_subscriptions', { filters: { trainerId: row.id }, order: 'new', limit: 1000 });
-  res.json({ success: true, data: rows.map((r) => { const s = docs.toItem(r); return { id: s.id, title: `${s.userName || 'Client'} · ${s.planName}`, amount: Number(s.amount || 0), at: s.createdAt, status: s.paymentStatus }; }) });
+  const [rows, payouts] = await Promise.all([
+    docs.list('trainer_subscriptions', { filters: { trainerId: row.id }, order: 'new', limit: 1000 }),
+    docs.list('payout_requests', { ownerId: row.id, order: 'new', limit: 200 }),
+  ]);
+  const data = [
+    ...rows.map((r) => { const s = docs.toItem(r); return { id: s.id, title: `${s.planName} plan · ${s.userName || 'Client'}`, amount: Number(s.amount || 0), at: s.createdAt, status: s.paymentStatus }; }),
+    ...payouts.map((r) => { const p = docs.toItem(r); return { id: p.id, title: 'Payout to bank', amount: -Number(p.amount || 0), at: p.createdAt, status: p.status }; }),
+  ].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  res.json({ success: true, data });
+});
+
+// Coach asks for a payout of their paid earnings; the admin settles it.
+panel.post('/payouts', async (req, res) => {
+  const row = await myTrainer(req, res); if (!row) return;
+  const amount = Math.round(Number(req.body.amount) || 0);
+  const paid = await one(`SELECT COALESCE(sum((data->>'amount')::numeric), 0) AS n FROM docs WHERE collection = 'trainer_subscriptions' AND data->>'trainerId' = $1 AND data->>'paymentStatus' = 'paid'`, [row.id]);
+  const out = await one(`SELECT COALESCE(sum((data->>'amount')::numeric), 0) AS n FROM docs WHERE collection = 'payout_requests' AND owner_id = $1 AND data->>'status' <> 'rejected'`, [row.id]);
+  if (amount <= 0 || amount > Number(paid.n) - Number(out.n)) return res.status(400).json({ success: false, message: 'Amount is more than your balance.' });
+  const p = await docs.upsert('payout_requests', docs.newId('pay'), { trainerId: row.id, trainerName: row.data.name, amount, status: 'requested' }, { ownerId: row.id });
+  notify({ audience: 'admins', title: 'Payout requested', body: `${row.data.name} asked for ₹${amount}`, type: 'payout', refId: p.id }).catch(() => {});
+  res.status(201).json({ success: true, data: docs.toItem(p) });
 });
 
 // trainer-owned content: workouts, diets (CRUD)
