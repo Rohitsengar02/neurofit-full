@@ -123,6 +123,7 @@ async function setStatus(req, res) {
   const patch = { orderStatus: status || row.data.orderStatus };
   if (req.body.paymentStatus) patch.paymentStatus = req.body.paymentStatus;
   if (req.body.trackingNumber) patch.trackingNumber = req.body.trackingNumber;
+  if (req.body.cancellationReason) patch.cancellationReason = String(req.body.cancellationReason).slice(0, 500);
   const history = Array.isArray(row.data.statusHistory) ? row.data.statusHistory : [];
   patch.statusHistory = [...history, { status: patch.orderStatus, at: new Date().toISOString() }];
   const updated = await docs.upsert('orders', row.id, patch);
