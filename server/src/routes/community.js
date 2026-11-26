@@ -19,6 +19,10 @@ async function decorate(rows, meId) {
     meId ? query(`SELECT target_id, kind FROM reactions WHERE target_id = ANY($1) AND user_id = $2`, [targets, meId]) : { rows: [] },
     query(`SELECT data->>'postId' AS pid, count(*)::int AS n FROM docs WHERE collection = 'comments' AND data->>'postId' = ANY($1) GROUP BY 1`, [ids]),
   ]);
+  const last = await query(
+    `SELECT DISTINCT ON (data->>'postId') id, owner_id, data, created_at FROM docs
+     WHERE collection = 'comments' AND data->>'postId' = ANY($1) ORDER BY data->>'postId', created_at DESC`, [ids]);
+  const lc = {}; for (const r of last.rows) lc[r.data.postId] = { id: r.id, name: r.data.name, text: r.data.text, avatarUrl: r.data.avatarUrl || '', createdAt: r.created_at, mine: !!meId && r.owner_id === meId };
   const c = {}; for (const r of counts.rows) (c[r.target_id] ||= {})[r.kind] = r.n;
   const m = {}; for (const r of mine.rows) (m[r.target_id] ||= new Set()).add(r.kind);
   const cc = {}; for (const r of comments.rows) cc[r.pid] = r.n;
@@ -35,7 +39,7 @@ async function decorate(rows, meId) {
       mine: !!meId && row.owner_id === meId,
       likes: (c[t] || {}).like || 0, liked: my.has('like'), saved: my.has('save'), tried: my.has('try'), reported: my.has('report'),
       reports: (c[t] || {}).report || 0,
-      votes, myVote, commentsCount: cc[row.id] || 0,
+      votes, myVote, commentsCount: cc[row.id] || 0, lastComment: lc[row.id] || null,
     };
   });
 }
