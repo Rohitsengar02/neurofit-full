@@ -92,7 +92,7 @@ router.get('/stats', requireAdmin, cached(['users', 'orders', 'posts', 'trainers
     series(`SELECT date_trunc('day', created_at) AS day, count(*) AS v FROM docs WHERE collection = 'orders' AND created_at > ${days(30)} GROUP BY 1`),
     series(`SELECT date_trunc('day', client_updated_at) AS day, count(*) AS v FROM user_records WHERE collection = 'workout_progress' AND data->>'dayCompleted' = 'true' AND client_updated_at > ${days(30)} GROUP BY 1`),
     query(`SELECT COALESCE(data->>'orderStatus','Pending') AS status, count(*)::int AS n FROM docs WHERE collection = 'orders' GROUP BY 1 ORDER BY 2 DESC`),
-    query(`SELECT it->>'name' AS name, COALESCE(it->>'productId', it->>'id') AS id, sum(COALESCE((it->>'quantity')::int, 1))::int AS qty,
+    query(`SELECT it->>'name' AS name, COALESCE(it->>'productId', it->>'id') AS id, max(COALESCE(it->>'image', it->>'imageUrl', '')) AS image, sum(COALESCE((it->>'quantity')::int, 1))::int AS qty,
              sum(COALESCE((it->>'price')::numeric, 0) * COALESCE((it->>'quantity')::int, 1)) AS revenue
            FROM docs, jsonb_array_elements(CASE WHEN jsonb_typeof(data->'items') = 'array' THEN data->'items' ELSE '[]'::jsonb END) it
            WHERE collection = 'orders' GROUP BY 1, 2 ORDER BY qty DESC LIMIT 10`),

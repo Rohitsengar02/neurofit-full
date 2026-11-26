@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import 'net_or_asset_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class OrdersAnalyticsView extends StatefulWidget {
@@ -17,7 +19,32 @@ class OrdersAnalyticsView extends StatefulWidget {
   State<OrdersAnalyticsView> createState() => _OrdersAnalyticsViewState();
 }
 
-class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
+class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> with LiveStats {
+  num _o(String k) => st.n('orders', k);
+  double _status(String label) {
+    var v = 0.0;
+    for (final r in st.rows('ordersByStatus')) {
+      final s = '${r['status']}';
+      final hit = label == 'Processing' ? ['Confirmed', 'Processing', 'Packed'].contains(s) : (label == 'Shipped' ? ['Shipped', 'Out for Delivery'].contains(s) : (label == 'Cancelled' ? ['Cancelled', 'Returned'].contains(s) : s == label));
+      if (hit) v += ((r['n'] as num?) ?? 0).toDouble();
+    }
+    return v;
+  }
+  String _statusLine(String label) => '${share(_status(label), _o('total'))} (${fmtInt(_status(label))})';
+  List<double> get _orders7 => st.series('orders', 7);
+  List<double> get _value7 => st.series('revenue', 7);
+  double get _ordersMax => top(_orders7, 4);
+  List<double> get _valueScaled {
+    final vm = _value7.fold<double>(0, (a, b) => b > a ? b : a);
+    final om = _orders7.fold<double>(0, (a, b) => b > a ? b : a);
+    return [for (final v in _value7) vm == 0 ? 0 : v / vm * (om == 0 ? 1 : om)];
+  }
+  List<double> get _aov7 => ins.series('orders', 'aovDaily', 7);
+  double get _aovNow => _o('avg_order_value').toDouble();
+  List<Map<String, dynamic>> get _pm => ins.list('revenue', 'paymentMethods');
+  double _pmN(String l) => pick(_pm, l, 'n');
+  double get _pmTotal => _pm.fold<double>(0, (a, r) => a + ((r['n'] as num?) ?? 0).toDouble());
+
   int _selectedFilterIndex = 2; // 0=Today, 1=Yesterday, 2=This Week, 3=Last Week, 4=This Month, 5=Custom
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -192,13 +219,13 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
                     physics: const BouncingScrollPhysics(),
                     child: Row(
                       children: [
-                        _buildHeroStat('1,243', 'Total Orders (↑14.3%)', const Color(0xFF10B981)),
+                        _buildHeroStat(fmtInt(_o('total')), 'Total Orders (${st.growthUp('orders') ? '↑' : '↓'}${st.growth('orders').abs().toStringAsFixed(1)}%)', const Color(0xFF10B981)),
                         const SizedBox(width: 12),
-                        _buildHeroStat('1,018', 'Delivered (↑12.7%)', const Color(0xFF3B82F6)),
+                        _buildHeroStat(fmtInt(_o('delivered')), 'Delivered', const Color(0xFF3B82F6)),
                         const SizedBox(width: 12),
-                        _buildHeroStat('₹10,12,500', 'Order Value (↑21.7%)', const Color(0xFFF97316)),
+                        _buildHeroStat(fmtInr(_o('revenue')), 'Order Value (${st.growthUp('revenue') ? '↑' : '↓'}${st.growth('revenue').abs().toStringAsFixed(1)}%)', const Color(0xFFF97316)),
                         const SizedBox(width: 12),
-                        _buildHeroStat('₹815', 'Avg Order Value (↑6.4%)', const Color(0xFF8B5CF6)),
+                        _buildHeroStat(fmtInr(_aovNow), 'Avg Order Value', const Color(0xFF8B5CF6)),
                       ],
                     ),
                   ),
@@ -282,12 +309,12 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
   // 3. 6 ORDER STAGE CARDS
   Widget _buildOrderStageCards() {
     final stages = [
-      {'title': 'Total Orders', 'val': '1,243', 'growth': '+14.3%', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Pending Orders', 'val': '156', 'growth': '-2.4%', 'icon': Icons.schedule_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Processing Orders', 'val': '312', 'growth': '+8.7%', 'icon': Icons.inventory_2_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Shipped Orders', 'val': '256', 'growth': '+11.2%', 'icon': Icons.local_shipping_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Delivered Orders', 'val': '1,018', 'growth': '+16.5%', 'icon': Icons.check_circle_rounded, 'color': const Color(0xFF14B8A6), 'bg': const Color(0xFFE6FAF8)},
-      {'title': 'Cancelled Orders', 'val': '145', 'growth': '-3.1%', 'icon': Icons.cancel_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEE2E2)},
+      {'title': 'Total Orders', 'val': fmtInt(_o('total')), 'growth': '+${fmtInt(_o('today'))} today', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Pending Orders', 'val': fmtInt(_status('Pending')), 'growth': share(_status('Pending'), _o('total')), 'icon': Icons.schedule_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Processing Orders', 'val': fmtInt(_status('Processing')), 'growth': share(_status('Processing'), _o('total')), 'icon': Icons.inventory_2_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Shipped Orders', 'val': fmtInt(_status('Shipped')), 'growth': share(_status('Shipped'), _o('total')), 'icon': Icons.local_shipping_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Delivered Orders', 'val': fmtInt(_status('Delivered')), 'growth': share(_status('Delivered'), _o('total')), 'icon': Icons.check_circle_rounded, 'color': const Color(0xFF14B8A6), 'bg': const Color(0xFFE6FAF8)},
+      {'title': 'Cancelled Orders', 'val': fmtInt(_status('Cancelled')), 'growth': share(_status('Cancelled'), _o('total')), 'icon': Icons.cancel_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEE2E2)},
     ];
 
     return SingleChildScrollView(
@@ -347,7 +374,7 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
             children: [
               _buildLegendDot(const Color(0xFF10B981), 'Orders'),
               const SizedBox(width: 14),
-              _buildLegendDot(const Color(0xFF3B82F6), 'Order Value'),
+              _buildLegendDot(const Color(0xFF3B82F6), 'Order Value (scaled)'),
             ],
           ),
           const SizedBox(height: 16),
@@ -355,15 +382,15 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
             height: 170,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 50, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: _ordersMax / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 50, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: _ordersMax / 4, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = dayLabels(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -379,10 +406,10 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 250,
+                maxY: _ordersMax,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 90), FlSpot(1, 140), FlSpot(2, 110), FlSpot(3, 160), FlSpot(4, 130), FlSpot(5, 180), FlSpot(6, 210)],
+                    spots: [for (var i = 0; i < _orders7.length; i++) FlSpot(i.toDouble(), _orders7[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -390,7 +417,7 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
                     dotData: const FlDotData(show: true),
                   ),
                   LineChartBarData(
-                    spots: const [FlSpot(0, 40), FlSpot(1, 80), FlSpot(2, 60), FlSpot(3, 100), FlSpot(4, 90), FlSpot(5, 120), FlSpot(6, 150)],
+                    spots: [for (var i = 0; i < _valueScaled.length; i++) FlSpot(i.toDouble(), _valueScaled[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF3B82F6),
@@ -430,19 +457,19 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFFF97316), value: 12.5, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 25.1, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 20.6, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 30.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFEF4444), value: 11.1, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF97316), value: _status('Pending') + (_o('total') == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: _status('Processing'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _status('Shipped'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _status('Delivered'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFEF4444), value: _status('Cancelled'), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('1,243', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Orders', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(_o('total')), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Orders', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -452,15 +479,15 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFFF97316), 'Pending', '12.5% (156)'),
+                    _buildDemographicRow(const Color(0xFFF97316), 'Pending', _statusLine('Pending')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Processing', '25.1% (312)'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Processing', _statusLine('Processing')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Shipped', '20.6% (256)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Shipped', _statusLine('Shipped')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF10B981), 'Delivered', '30.7% (382)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Delivered', _statusLine('Delivered')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFEF4444), 'Cancelled', '11.1% (138)'),
+                    _buildDemographicRow(const Color(0xFFEF4444), 'Cancelled', _statusLine('Cancelled')),
                   ],
                 ),
               ),
@@ -473,12 +500,17 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
 
   // 5. ORDERS BY CATEGORY
   Widget _buildOrdersByCategorySection() {
+    const catColors = [Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF8B5CF6), Color(0xFFF97316), Color(0xFF14B8A6), Color(0xFFEC4899)];
+    final cats = ins.list('orders', 'categories');
+    final catTotal = cats.fold<num>(0, (a, c) => a + ((c['orders'] as num?) ?? 0));
     final categories = [
-      {'name': 'Supplements', 'pct': 0.425, 'val': '42.5% • 528', 'color': const Color(0xFF10B981)},
-      {'name': 'Nutrition', 'pct': 0.378, 'val': '37.8% • 470', 'color': const Color(0xFF3B82F6)},
-      {'name': 'Accessories', 'pct': 0.156, 'val': '15.6% • 194', 'color': const Color(0xFF8B5CF6)},
-      {'name': 'Workout Gear', 'pct': 0.118, 'val': '11.8% • 146', 'color': const Color(0xFFF97316)},
-      {'name': 'Others', 'pct': 0.089, 'val': '8.9% • 111', 'color': const Color(0xFF14B8A6)},
+      for (var i = 0; i < cats.length && i < 6; i++)
+        {
+          'name': '${cats[i]['label']}',
+          'pct': catTotal == 0 ? 0.0 : ((cats[i]['orders'] as num? ?? 0) / catTotal).toDouble(),
+          'val': '${share(cats[i]['orders'] as num? ?? 0, catTotal)} • ${cats[i]['orders']}',
+          'color': catColors[i % catColors.length],
+        },
     ];
 
     return Container(
@@ -552,19 +584,19 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 54.1, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 26.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 11.2, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 5.6, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF06B6D4), value: 2.4, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _pmN('UPI') + (_pmTotal == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _pmN('Card'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF59E0B), value: _pmN('Cash on Delivery'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: (_pmTotal - _pmN('UPI') - _pmN('Card') - _pmN('Cash on Delivery') - _pmN('Wallet')), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF06B6D4), value: _pmN('Wallet'), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('1,243', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Orders', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(_o('total')), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Orders', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -574,15 +606,15 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'UPI', '54.1%'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'UPI', share(_pmN('UPI'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Card', '26.7%'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Card', share(_pmN('Card'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF59E0B), 'COD', '11.2%'),
+                    _buildDemographicRow(const Color(0xFFF59E0B), 'COD', share(_pmN('Cash on Delivery'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Net Banking', '5.6%'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other', share(_pmTotal - _pmN('UPI') - _pmN('Card') - _pmN('Cash on Delivery') - _pmN('Wallet'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF06B6D4), 'Wallet', '2.4%'),
+                    _buildDemographicRow(const Color(0xFF06B6D4), 'Wallet', share(_pmN('Wallet'), _pmTotal)),
                   ],
                 ),
               ),
@@ -596,11 +628,8 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
   // 6. TOP SELLING PRODUCTS
   Widget _buildTopSellingProductsSection() {
     final products = [
-      {'title': 'Whey Protein', 'desc': '380 Orders', 'growth': '+18.4%', 'img': 'assets/images/nutrifit_whey_protein.jpg'},
-      {'title': 'Creatine Monohydrate', 'desc': '295 Orders', 'growth': '+14.2%', 'img': 'assets/images/product_1.png'},
-      {'title': 'Peanut Butter', 'desc': '241 Orders', 'growth': '+10.1%', 'img': 'assets/images/product_2.png'},
-      {'title': 'Pre-Workout', 'desc': '201 Orders', 'growth': '+12.6%', 'img': 'assets/images/nutrifit_whey_protein.jpg'},
-      {'title': 'Gym Bag', 'desc': '162 Orders', 'growth': '+7.4%', 'img': 'assets/images/product_1.png'},
+      for (final p in st.rows('topProducts').take(5))
+        {'title': '${p['name'] ?? 'Product'}', 'desc': '${fmtInt(p['qty'] as num? ?? 0)} sold', 'growth': fmtInrShort(p['revenue'] as num? ?? 0), 'img': '${p['image'] ?? ''}'},
     ];
 
     return Container(
@@ -625,7 +654,7 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.asset(p['img'] as String, width: 38, height: 38, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.inventory_2)),
+                  child: NetOrAssetImage(p['img'] as String, width: 38, height: 38, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.inventory_2)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -648,13 +677,10 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
 
   // 7. ORDERS BY LOCATION
   Widget _buildOrdersByLocationSection() {
+    final cityRows = ins.list('orders', 'cities');
+    final cityTotal = cityRows.fold<num>(0, (a, c) => a + ((c['n'] as num?) ?? 0));
     final locations = [
-      {'name': 'Maharashtra', 'val': '34.2% (425)'},
-      {'name': 'Karnataka', 'val': '24.1% (299)'},
-      {'name': 'Uttar Pradesh', 'val': '18.5% (230)'},
-      {'name': 'Tamil Nadu', 'val': '12.8% (159)'},
-      {'name': 'Delhi', 'val': '9.4% (117)'},
-      {'name': 'Others', 'val': '21.0% (261)'},
+      for (final c in cityRows) {'name': '${c['label']}', 'val': '${share(c['n'] as num? ?? 0, cityTotal)} (${c['n']})'},
     ];
 
     return Container(
@@ -694,8 +720,8 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
 
   // 7. DAILY ORDER TREND
   Widget _buildDailyOrderTrendSection() {
-    final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
-    final orders = [120.0, 165.0, 140.0, 195.0, 235.0, 180.0, 208.0];
+    final days = dayLabels(7);
+    final orders = _orders7;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -716,14 +742,14 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
             child: BarChart(
               BarChartData(
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 50, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: _ordersMax / 4, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       getTitlesWidget: (v, meta) {
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
-                          return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i].substring(4), style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: i == 4 ? const Color(0xFF10B981) : const Color(0xFF94A3B8))));
+                          return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i].split(' ').last, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: i == 6 ? const Color(0xFF10B981) : const Color(0xFF94A3B8))));
                         }
                         return const SizedBox.shrink();
                       },
@@ -734,7 +760,8 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
                 ),
                 gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 50, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 borderData: FlBorderData(show: false),
-                barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: orders[i], color: i == 4 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 16, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
+                maxY: _ordersMax,
+                barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: orders[i], color: i == 6 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 16, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
               ),
             ),
           ),
@@ -759,24 +786,24 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹815', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(_aovNow), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 6.4% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${fmtInr(_aov7.isEmpty ? 0 : _aov7.last)} today', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 140,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 200, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_aov7, 100) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 1000,
+                maxY: top(_aov7, 100),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 520), FlSpot(1, 680), FlSpot(2, 640), FlSpot(3, 820), FlSpot(4, 760), FlSpot(5, 890), FlSpot(6, 815)],
+                    spots: [for (var i = 0; i < _aov7.length; i++) FlSpot(i.toDouble(), _aov7[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -801,12 +828,18 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
 
   // 8. RECENT ORDERS
   Widget _buildRecentOrdersSection() {
+    const sc = {'Delivered': Color(0xFF10B981), 'Shipped': Color(0xFF3B82F6), 'Processing': Color(0xFF8B5CF6), 'Pending': Color(0xFFF97316), 'Cancelled': Color(0xFFEF4444)};
     final orders = [
-      {'id': '#ORD-1243', 'user': 'Manoj Sharma', 'amount': '₹2,499', 'status': 'Delivered', 'date': 'May 26, 2025', 'color': const Color(0xFF10B981)},
-      {'id': '#ORD-1242', 'user': 'Priya Patel', 'amount': '₹1,899', 'status': 'Shipped', 'date': 'May 26, 2025', 'color': const Color(0xFF3B82F6)},
-      {'id': '#ORD-1241', 'user': 'Amit Verma', 'amount': '₹899', 'status': 'Processing', 'date': 'May 25, 2025', 'color': const Color(0xFF8B5CF6)},
-      {'id': '#ORD-1240', 'user': 'Neha Singh', 'amount': '₹450', 'status': 'Pending', 'date': 'May 25, 2025', 'color': const Color(0xFFF97316)},
-      {'id': '#ORD-1239', 'user': 'Suresh Raina', 'amount': '₹1,299', 'status': 'Cancelled', 'date': 'May 25, 2025', 'color': const Color(0xFFEF4444)},
+      for (final t in ins.list('revenue', 'transactions'))
+        if (t['kind'] == 'order')
+          {
+            'id': '#${'${t['id']}'.length > 6 ? '${t['id']}'.substring('${t['id']}'.length - 6).toUpperCase() : t['id']}',
+            'user': '${t['title']}',
+            'amount': fmtInr(t['amount'] as num? ?? 0),
+            'status': '${t['status']}',
+            'date': shortDate(t['at']?.toString()),
+            'color': sc['${t['status']}'] ?? const Color(0xFF8B5CF6),
+          },
     ];
 
     return Container(
@@ -864,11 +897,11 @@ class _OrdersAnalyticsViewState extends State<OrdersAnalyticsView> {
   // 8. ORDERS SUMMARY
   Widget _buildOrdersSummarySection() {
     final summaries = [
-      {'title': 'Total Orders', 'val': '1,243', 'growth': '+14.3%', 'color': const Color(0xFF10B981), 'icon': Icons.shopping_bag_rounded},
-      {'title': 'Total Order Value', 'val': '₹10,12,500', 'growth': '+21.7%', 'color': const Color(0xFF8B5CF6), 'icon': Icons.account_balance_wallet_rounded},
-      {'title': 'Average Order Value', 'val': '₹815', 'growth': '+6.4%', 'color': const Color(0xFFF97316), 'icon': Icons.show_chart_rounded},
-      {'title': 'Refunded Amount', 'val': '₹52,000', 'growth': '-2.4%', 'color': const Color(0xFFEF4444), 'icon': Icons.replay_rounded},
-      {'title': 'Return Requests', 'val': '16', 'growth': '+1.8%', 'color': const Color(0xFF3B82F6), 'icon': Icons.swap_horiz_rounded},
+      {'title': 'Total Orders', 'val': fmtInt(_o('total')), 'growth': st.growthLabel('orders', ''), 'color': const Color(0xFF10B981), 'icon': Icons.shopping_bag_rounded},
+      {'title': 'Total Order Value', 'val': fmtInr(_o('revenue')), 'growth': st.growthLabel('revenue', ''), 'color': const Color(0xFF8B5CF6), 'icon': Icons.account_balance_wallet_rounded},
+      {'title': 'Average Order Value', 'val': fmtInr(_aovNow), 'growth': 'all time', 'color': const Color(0xFFF97316), 'icon': Icons.show_chart_rounded},
+      {'title': 'Refunded Amount', 'val': fmtInr(ins.n('orders', 'refunded')), 'growth': 'paid then cancelled', 'color': const Color(0xFFEF4444), 'icon': Icons.replay_rounded},
+      {'title': 'Return Requests', 'val': fmtInt(ins.n('orders', 'returns')), 'growth': 'all time', 'color': const Color(0xFF3B82F6), 'icon': Icons.swap_horiz_rounded},
     ];
 
     return Container(

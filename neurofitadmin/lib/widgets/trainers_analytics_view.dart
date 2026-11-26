@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import 'net_or_asset_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class TrainersAnalyticsView extends StatefulWidget {
@@ -17,7 +19,29 @@ class TrainersAnalyticsView extends StatefulWidget {
   State<TrainersAnalyticsView> createState() => _TrainersAnalyticsViewState();
 }
 
-class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
+class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> with LiveStats {
+  List<Map<String, dynamic>> get _status => ins.list('trainers', 'status');
+  double _st(String l) => labelValue(_status, l);
+  double get _all => _status.fold<double>(0, (a, r) => a + ((r['n'] as num?) ?? 0).toDouble());
+  String _line(String l) => '${share(_st(l), _all)} (${fmtInt(_st(l))})';
+  List<double> get _new7 => ins.series('trainers', 'growth', 7);
+  List<double> get _total7 {
+    final n = _new7;
+    var run = _all;
+    final out = List<double>.filled(n.length, 0);
+    for (var i = n.length - 1; i >= 0; i--) { out[i] = run; run -= n[i]; }
+    return out;
+  }
+  List<double> get _live7 => ins.series('trainers', 'liveDaily', 7);
+  List<double> get _earn7 => ins.series('trainers', 'earningsDaily', 7);
+  List<double> get _rating7 => ins.series('trainers', 'ratingDaily', 7);
+  double get _approved => _st('approved') == 0 ? 1 : _st('approved');
+  List<Map<String, dynamic>> get _payout => ins.list('trainers', 'payout');
+  double get _payTotal => _payout.fold<double>(0, (a, r) => a + ((r['amount'] as num?) ?? 0).toDouble());
+  double _pay(String l) => pick(_payout, l);
+  double get _payOther => _payTotal - _pay('Paid') - _pay('Pending');
+  List<FlSpot> _sp(List<double> v) => [for (var i = 0; i < v.length; i++) FlSpot(i.toDouble(), v[i])];
+
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
     return FadeTransition(
@@ -229,11 +253,11 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
   // 2. TOP 5 KPI CARDS
   Widget _buildTop5KpisSection() {
     final kpis = [
-      {'title': 'Total Trainers', 'val': '1,243', 'growth': '+15.8%', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Active Trainers', 'val': '986', 'growth': '+18.5%', 'icon': Icons.how_to_reg_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'New Trainers', 'val': '135', 'growth': '+9.7%', 'icon': Icons.person_add_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Total Sessions', 'val': '12,458', 'growth': '+14.8%', 'icon': Icons.event_available_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
-      {'title': 'Total Earnings', 'val': '₹24,58,300', 'growth': '+21.7%', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF14B8A6), 'bg': const Color(0xFFE6FAF8)},
+      {'title': 'Total Trainers', 'val': fmtInt(_all), 'growth': '+${fmtInt(_new7.fold<double>(0, (a, b) => a + b))} this week', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Active Trainers', 'val': fmtInt(_st('approved')), 'growth': '${fmtInt(st.n('trainers', 'live_now'))} live now', 'icon': Icons.how_to_reg_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'New Trainers', 'val': fmtInt(ins.series('trainers', 'growth').fold<double>(0, (a, b) => a + b)), 'growth': 'last 30 days', 'icon': Icons.person_add_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'Total Sessions', 'val': fmtInt(st.n('trainers', 'sessions')), 'growth': 'live classes', 'icon': Icons.event_available_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Earnings', 'val': fmtInr(st.n('trainers', 'sub_revenue')), 'growth': '${fmtInt(st.n('trainers', 'active_subs'))} active clients', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF14B8A6), 'bg': const Color(0xFFE6FAF8)},
     ];
 
     return SingleChildScrollView(
@@ -297,7 +321,7 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
             children: [
               _buildLegendDot(const Color(0xFF10B981), 'New Trainers'),
               const SizedBox(width: 14),
-              _buildLegendDot(const Color(0xFF3B82F6), 'Active Trainers'),
+              _buildLegendDot(const Color(0xFF3B82F6), 'Total Trainers'),
             ],
           ),
           const SizedBox(height: 16),
@@ -305,15 +329,15 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
             height: 170,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 50, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_total7, 4) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 50, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: top(_total7, 4) / 4, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = dayLabels(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -329,10 +353,10 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 250,
+                maxY: top(_total7, 4),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 90), FlSpot(1, 140), FlSpot(2, 110), FlSpot(3, 160), FlSpot(4, 130), FlSpot(5, 180), FlSpot(6, 210)],
+                    spots: _sp(_new7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -340,7 +364,7 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                     dotData: const FlDotData(show: true),
                   ),
                   LineChartBarData(
-                    spots: const [FlSpot(0, 40), FlSpot(1, 80), FlSpot(2, 60), FlSpot(3, 100), FlSpot(4, 90), FlSpot(5, 120), FlSpot(6, 150)],
+                    spots: _sp(_total7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF3B82F6),
@@ -380,18 +404,18 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 79.3, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 10.8, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 6.2, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF97316), value: 3.5, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _st('approved') + (_all == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _st('pending'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: _st('rejected'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF97316), value: _st('suspended'), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('1,243', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Trainers', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(_all), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Trainers', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -401,13 +425,13 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Active', '79.3% (986)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Active', _line('approved')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Pending', '10.8% (135)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Pending', _line('pending')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Inactive', '6.2% (78)'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Rejected', _line('rejected')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFF97316), 'Suspended', '3.5% (44)'),
+                    _buildDemographicRow(const Color(0xFFF97316), 'Suspended', _line('suspended')),
                   ],
                 ),
               ),
@@ -442,18 +466,18 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 64.2, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 18.9, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF97316), value: 11.1, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 5.8, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _st('approved') + (_all == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _st('pending'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF97316), value: _st('rejected'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: _st('suspended'), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('1,243', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Applications', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInt(_all), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Applications', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -463,13 +487,13 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Verified', '64.2% (798)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Verified', _line('approved')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Pending', '18.9% (235)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Pending', _line('pending')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFFF97316), 'Rejected', '11.1% (138)'),
+                    _buildDemographicRow(const Color(0xFFF97316), 'Rejected', _line('rejected')),
                     const SizedBox(height: 6),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Not Applied', '5.8% (72)'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Suspended', _line('suspended')),
                   ],
                 ),
               ),
@@ -482,13 +506,12 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
 
   // 4. TRAINERS BY SPECIALIZATION
   Widget _buildTrainersBySpecializationSection() {
+    const specColors = [Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF8B5CF6), Color(0xFF06B6D4), Color(0xFFF97316), Color(0xFF64748B)];
+    final cats = ins.list('trainers', 'categories');
+    final catTotal = cats.fold<num>(0, (a, c) => a + ((c['n'] as num?) ?? 0));
     final specs = [
-      {'name': 'Strength Training', 'pct': 0.31, 'val': '385 (31.0%)', 'color': const Color(0xFF10B981)},
-      {'name': 'Yoga', 'pct': 0.221, 'val': '275 (22.1%)', 'color': const Color(0xFF3B82F6)},
-      {'name': 'Weight Loss', 'pct': 0.200, 'val': '248 (20.0%)', 'color': const Color(0xFF8B5CF6)},
-      {'name': 'HIIT', 'pct': 0.146, 'val': '182 (14.6%)', 'color': const Color(0xFF06B6D4)},
-      {'name': 'Rehabilitation', 'pct': 0.095, 'val': '118 (9.5%)', 'color': const Color(0xFFF97316)},
-      {'name': 'Others', 'pct': 0.028, 'val': '35 (2.8%)', 'color': const Color(0xFF64748B)},
+      for (var i = 0; i < cats.length; i++)
+        {'name': '${cats[i]['label']}', 'pct': catTotal == 0 ? 0.0 : ((cats[i]['n'] as num) / catTotal).toDouble(), 'val': '${cats[i]['n']} (${share(cats[i]['n'] as num, catTotal)})', 'color': specColors[i % specColors.length]},
     ];
 
     return Container(
@@ -540,12 +563,12 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
 
   // 4. TRAINERS BY RATING
   Widget _buildTrainersByRatingSection() {
+    const rColors = {'4.5 - 5.0': Color(0xFF10B981), '4.0 - 4.5': Color(0xFF3B82F6), '3.0 - 4.0': Color(0xFFF59E0B), 'Below 3.0': Color(0xFFEF4444), 'No reviews': Color(0xFF94A3B8)};
+    final rr = ins.list('trainers', 'ratings');
+    final rTotal = rr.fold<num>(0, (a, c) => a + ((c['n'] as num?) ?? 0));
     final ratings = [
-      {'star': '5★', 'pct': 0.299, 'val': '372 (29.9%)', 'color': const Color(0xFF10B981)},
-      {'star': '4★', 'pct': 0.386, 'val': '480 (38.6%)', 'color': const Color(0xFF3B82F6)},
-      {'star': '3★', 'pct': 0.135, 'val': '168 (13.5%)', 'color': const Color(0xFFF59E0B)},
-      {'star': '2★', 'pct': 0.036, 'val': '45 (3.6%)', 'color': const Color(0xFFF97316)},
-      {'star': '1★', 'pct': 0.018, 'val': '23 (1.8%)', 'color': const Color(0xFFEF4444)},
+      for (final r in rr)
+        {'star': '${r['label']}${r['label'] == 'No reviews' ? '' : '★'}', 'pct': rTotal == 0 ? 0.0 : ((r['n'] as num) / rTotal).toDouble(), 'val': '${r['n']} (${share(r['n'] as num, rTotal)})', 'color': rColors['${r['label']}'] ?? const Color(0xFF64748B)},
     ];
 
     return Container(
@@ -595,11 +618,8 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
   // 5. TOP PERFORMING TRAINERS
   Widget _buildTopPerformingTrainersSection() {
     final trainers = [
-      {'name': 'Amit Sharma', 'desc': '152 Sessions • 4.9★', 'earnings': '₹4,75,500', 'img': 'assets/images/trainers_hero_banner.jpg'},
-      {'name': 'Priya Patel', 'desc': '140 Sessions • 4.8★', 'earnings': '₹3,94,800', 'img': 'assets/images/athlete_transform_1787825621309.jpg'},
-      {'name': 'Rahul Verma', 'desc': '118 Sessions • 4.9★', 'earnings': '₹2,25,000', 'img': 'assets/images/hero_banner_4.png'},
-      {'name': 'Neha Singh', 'desc': '98 Sessions • 4.7★', 'earnings': '₹1,72,500', 'img': 'assets/images/hero_banner_1.png'},
-      {'name': 'Karan Mehra', 'desc': '84 Sessions • 4.8★', 'earnings': '₹1,20,500', 'img': 'assets/images/workout_banner_1.png'},
+      for (final t in ins.list('trainers', 'top'))
+        {'name': '${t['name'] ?? 'Coach'}', 'desc': '${t['clients']} clients • ${t['rating'] == null || t['rating'] == 0 ? 'New' : '${t['rating']}★'}', 'earnings': fmtInr(t['earnings'] as num? ?? 0), 'img': '${t['photo'] ?? ''}'},
     ];
 
     return Container(
@@ -624,7 +644,7 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.asset(t['img'] as String, width: 36, height: 36, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person)),
+                  child: NetOrAssetImage(t['img'] as String, width: 36, height: 36, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -653,8 +673,8 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
 
   // 5. SESSIONS CONDUCTED
   Widget _buildSessionsConductedSection() {
-    final days = ['20', '21', '22', '23', '24', '25', '26'];
-    final sessions = [140.0, 190.0, 165.0, 210.0, 250.0, 195.0, 220.0];
+    final days = [for (final d in dayLabels(7)) d.split(' ').last];
+    final sessions = _live7;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -670,23 +690,23 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('12,458', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInt(st.n('trainers', 'sessions')), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 14.8% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${fmtInt(_live7.fold<double>(0, (a, b) => a + b))} in the last 7 days', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 150,
             child: BarChart(
               BarChartData(
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 50, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: top(_live7, 4) / 4, getTitlesWidget: (v, meta) => Text('${v.toInt()}', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       getTitlesWidget: (v, meta) {
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
-                          return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: i == 4 ? const Color(0xFF10B981) : const Color(0xFF94A3B8))));
+                          return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: i == 6 ? const Color(0xFF10B981) : const Color(0xFF94A3B8))));
                         }
                         return const SizedBox.shrink();
                       },
@@ -695,9 +715,10 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 50, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_live7, 4) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 borderData: FlBorderData(show: false),
-                barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: sessions[i], color: i == 4 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 14, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
+                maxY: top(_live7, 4),
+                barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: sessions[i], color: i == 6 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 14, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
               ),
             ),
           ),
@@ -722,9 +743,9 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('4.7 ★', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text('${ins.sub('trainers', 'rating')['avg'] ?? 0} ★', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 0.2% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${ins.sub('trainers', 'rating')['n'] ?? 0} reviews in total', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 130,
@@ -735,11 +756,11 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
-                minY: 3,
+                minY: 0,
                 maxY: 5,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 4.4), FlSpot(1, 4.6), FlSpot(2, 4.5), FlSpot(3, 4.8), FlSpot(4, 4.7), FlSpot(5, 4.9), FlSpot(6, 4.7)],
+                    spots: _sp(_rating7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF8B5CF6),
@@ -778,24 +799,24 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹24,58,300', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(st.n('trainers', 'sub_revenue')), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 21.7% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${fmtInr(_earn7.fold<double>(0, (a, b) => a + b))} in the last 7 days', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 140,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top(_earn7, 1000) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 550,
+                maxY: top(_earn7, 1000),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 210), FlSpot(1, 310), FlSpot(2, 380), FlSpot(3, 490), FlSpot(4, 320), FlSpot(5, 420), FlSpot(6, 520)],
+                    spots: _sp(_earn7),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -842,17 +863,17 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 76.2, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 17.3, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF97316), value: 6.5, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _pay('Paid') + (_payTotal == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _pay('Pending'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF97316), value: _payOther, radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('₹24.58L', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Payout', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInrShort(_payTotal), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Payout', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -862,11 +883,11 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Paid', '₹18.72L (76.2%)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Paid', '${fmtInrShort(_pay('Paid'))} (${share(_pay('Paid'), _payTotal)})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Pending', '₹4.24L (17.3%)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Pending', '${fmtInrShort(_pay('Pending'))} (${share(_pay('Pending'), _payTotal)})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF97316), 'Hold', '₹1.62L (6.5%)'),
+                    _buildDemographicRow(const Color(0xFFF97316), 'Other', '${fmtInrShort(_payOther)} (${share(_payOther, _payTotal)})'),
                   ],
                 ),
               ),
@@ -893,24 +914,24 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹19,782', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(st.n('trainers', 'sub_revenue') / _approved), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 18.7% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${fmtInr(_earn7.fold<double>(0, (a, b) => a + b) / _approved)} per coach this week', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 130,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 5000, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: top([for (final e in _earn7) e / _approved], 100) / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: const FlTitlesData(show: false),
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 6,
-                minY: 10000,
-                maxY: 25000,
+                minY: 0,
+                maxY: top([for (final e in _earn7) e / _approved], 100),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 14000), FlSpot(1, 16500), FlSpot(2, 15500), FlSpot(3, 18500), FlSpot(4, 17000), FlSpot(5, 21000), FlSpot(6, 19782)],
+                    spots: _sp([for (final e in _earn7) e / _approved]),
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF3B82F6),
@@ -935,12 +956,10 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
 
   // 7. RECENT TRAINER REGISTRATIONS
   Widget _buildRecentTrainerRegistrationsSection() {
+    const regColor = {'approved': Color(0xFF10B981), 'pending': Color(0xFFF97316), 'rejected': Color(0xFFEF4444), 'suspended': Color(0xFF64748B)};
     final regs = [
-      {'name': 'Devraj Joshi', 'spec': 'Strength Training', 'date': 'May 26, 2025', 'status': 'Pending', 'color': const Color(0xFFF97316), 'img': 'assets/images/trainers_hero_banner.jpg'},
-      {'name': 'Aniket Rajput', 'spec': 'Yoga', 'date': 'May 26, 2025', 'status': 'Pending', 'color': const Color(0xFFF97316), 'img': 'assets/images/hero_banner_4.png'},
-      {'name': 'Rishi Raina', 'spec': 'Weight Loss', 'date': 'May 25, 2025', 'status': 'Verified', 'color': const Color(0xFF10B981), 'img': 'assets/images/hero_banner_1.png'},
-      {'name': 'Pooja Mishra', 'spec': 'HIIT', 'date': 'May 25, 2025', 'status': 'Verified', 'color': const Color(0xFF10B981), 'img': 'assets/images/athlete_transform_1787825621309.jpg'},
-      {'name': 'Jatin Verma', 'spec': 'Rehabilitation', 'date': 'May 25, 2025', 'status': 'Verified', 'color': const Color(0xFF10B981), 'img': 'assets/images/workout_banner_1.png'},
+      for (final r in ins.list('trainers', 'recent'))
+        {'name': '${r['name'] ?? 'Coach'}', 'spec': '${r['cat']}', 'date': shortDate(r['at']?.toString()), 'status': r['status'] == 'approved' ? 'Verified' : '${r['status']}'[0].toUpperCase() + '${r['status']}'.substring(1), 'color': regColor['${r['status']}'] ?? const Color(0xFFF97316), 'img': '${r['photo'] ?? ''}'},
     ];
 
     return Container(
@@ -965,7 +984,7 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
               decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14)),
               child: Row(
                 children: [
-                  ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.asset(r['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, st) => const Icon(Icons.person))),
+                  ClipRRect(borderRadius: BorderRadius.circular(16), child: NetOrAssetImage(r['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, st) => const Icon(Icons.person))),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -992,12 +1011,10 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
 
   // 7. RECENT TRAINER ACTIVITY
   Widget _buildRecentTrainerActivitySection() {
+    const tag = {'live': ['Live Session', Color(0xFF3B82F6)], 'payment': ['Payment', Color(0xFF8B5CF6)], 'review': ['Review', Color(0xFF10B981)], 'update': ['Update', Color(0xFFF97316)]};
     final acts = [
-      {'user': 'Amit Sharma', 'act': 'completed session: Strength Training (1h 30m)', 'tag': 'Session Completed', 'color': const Color(0xFF10B981), 'img': 'assets/images/trainers_hero_banner.jpg'},
-      {'user': 'Priya Patel', 'act': 'scheduled a live class: Yoga (10 to 11 AM)', 'tag': 'Live Session', 'color': const Color(0xFF3B82F6), 'img': 'assets/images/athlete_transform_1787825621309.jpg'},
-      {'user': 'Rahul Verma', 'act': 'received ₹8,500: Payout of Session #TXN-8742', 'tag': 'Payment', 'color': const Color(0xFF8B5CF6), 'img': 'assets/images/hero_banner_4.png'},
-      {'user': 'Neha Singh', 'act': 'created a new program: HIIT Weight Loss', 'tag': 'New Program', 'color': const Color(0xFF06B6D4), 'img': 'assets/images/hero_banner_1.png'},
-      {'user': 'Karan Mehra', 'act': 'updated profile info: Added certificate in nutrition', 'tag': 'Update', 'color': const Color(0xFFF97316), 'img': 'assets/images/workout_banner_1.png'},
+      for (final a in ins.list('trainers', 'activity'))
+        {'user': '${a['who']}', 'act': '${a['what']} · ${timeAgo(a['at']?.toString())}', 'tag': (tag['${a['kind']}'] ?? tag['update']!)[0], 'color': (tag['${a['kind']}'] ?? tag['update']!)[1], 'img': '${a['photo'] ?? ''}'},
     ];
 
     return Container(
@@ -1022,7 +1039,7 @@ class _TrainersAnalyticsViewState extends State<TrainersAnalyticsView> {
               decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14)),
               child: Row(
                 children: [
-                  ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.asset(a['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, st) => const Icon(Icons.person))),
+                  ClipRRect(borderRadius: BorderRadius.circular(16), child: NetOrAssetImage(a['img'] as String, width: 34, height: 34, fit: BoxFit.cover, errorBuilder: (c, e, st) => const Icon(Icons.person))),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(

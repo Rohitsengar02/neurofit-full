@@ -36,7 +36,7 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
     retention, platforms, heat, sessions, returning, goalsNew, signups90,
     rev, revDaily, revMonthly, payMethods, byUserType, plans, orderCats, cities, aov, refunds, orderDaily,
     trainerStatus, trainerCats, ratingBuckets, topTrainers, trainerGrowth, liveDaily, earnDaily, payout,
-    fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily, txns,
+    fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily, txns, ratingDaily, ratingAll, regs, tActs,
   ] = await Promise.all([
     // ---------- users ----------
     one(`SELECT
@@ -154,6 +154,22 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
               COALESCE(data->>'status', 'active'), COALESCE(data->>'paymentStatus', ''), created_at
             FROM docs WHERE collection = 'trainer_subscriptions' ORDER BY created_at DESC LIMIT 8)
           ORDER BY at DESC LIMIT 8`),
+    rows(`SELECT date_trunc('day', created_at) AS day, avg((data->>'stars')::numeric) AS v FROM docs WHERE collection = 'reviews' AND created_at > now() - interval '30 days' GROUP BY 1`),
+    one(`SELECT COALESCE(round(avg((data->>'stars')::numeric), 2), 0) AS avg, count(*)::int AS n FROM docs WHERE collection = 'reviews'`),
+    rows(`SELECT id, data->>'name' AS name, initcap(COALESCE(data->>'cat','')) AS cat, COALESCE(data->>'status','pending') AS status, COALESCE(data->>'photo','') AS photo, created_at AS at
+          FROM docs WHERE collection = 'trainers' ORDER BY created_at DESC LIMIT 5`),
+    rows(`(SELECT 'live' AS kind, COALESCE(t.data->>'name', 'Coach') AS who, COALESCE(t.data->>'photo','') AS photo, 'went live: ' || COALESCE(l.data->>'title', 'Live class') AS what, l.created_at AS at
+             FROM docs l LEFT JOIN docs t ON t.collection = 'trainers' AND t.id = l.owner_id WHERE l.collection = 'live_sessions' ORDER BY l.created_at DESC LIMIT 5)
+          UNION ALL
+          (SELECT 'payment', COALESCE(data->>'trainerName', 'Coach'), '', 'new client ' || COALESCE(data->>'userName', '') || ' · ₹' || COALESCE(data->>'amount', '0'), created_at
+             FROM docs WHERE collection = 'trainer_subscriptions' ORDER BY created_at DESC LIMIT 5)
+          UNION ALL
+          (SELECT 'review', COALESCE(t.data->>'name', 'Coach'), COALESCE(t.data->>'photo',''), 'got a ' || COALESCE(r.data->>'stars', '?') || '★ review', r.created_at
+             FROM docs r LEFT JOIN docs t ON t.collection = 'trainers' AND t.id = r.data->>'trainerId' WHERE r.collection = 'reviews' ORDER BY r.created_at DESC LIMIT 5)
+          UNION ALL
+          (SELECT 'update', COALESCE(data->>'name', 'Coach'), COALESCE(data->>'photo',''), 'updated their coach profile', updated_at
+             FROM docs WHERE collection = 'trainers' AND updated_at > created_at + interval '1 minute' ORDER BY updated_at DESC LIMIT 5)
+          ORDER BY at DESC LIMIT 6`),
   ]);
 
   const heatmap = Array.from({ length: 7 }, () => Array(7).fill(0));
@@ -169,7 +185,7 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
     revenue: { ...num(rev), total: Number(rev.market) + Number(rev.subs), daily: fill(revDaily, 30), monthly: months12(revMonthly).map((m) => { const r = revMonthly.find((x) => new Date(x.m).toISOString().slice(0, 7) === m.month) || {}; return { ...m, market: Number(r.market || 0), subs: Number(r.subs || 0) }; }),
       paymentMethods: payMethods.map(num), byUserType: byUserType.map(num), plans: plans.map(num), transactions: txns.map(num) },
     orders: { categories: orderCats.map(num), cities: cities.map(num), aovDaily: fill(aov, 30), daily: fill(orderDaily, 30), ...num(refunds) },
-    trainers: { status: trainerStatus, categories: trainerCats, ratings: ratingBuckets, top: topTrainers.map(num), growth: fill(trainerGrowth, 30), liveDaily: fill(liveDaily, 30), earningsDaily: fill(earnDaily, 30), payout: payout.map(num) },
+    trainers: { status: trainerStatus, categories: trainerCats, ratings: ratingBuckets, top: topTrainers.map(num), growth: fill(trainerGrowth, 30), liveDaily: fill(liveDaily, 30), earningsDaily: fill(earnDaily, 30), payout: payout.map(num), ratingDaily: fill(ratingDaily, 30), rating: num(ratingAll), recent: regs, activity: tActs },
     fitness: { ...num(fitnessUsers), daily: fill(workoutDaily, 30), programs },
     nutrition: { ...num(nutrition), daily: fill(nutritionDaily, 30) },
   } });
