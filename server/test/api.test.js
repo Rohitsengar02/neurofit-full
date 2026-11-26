@@ -238,11 +238,14 @@ test('admin stats', async () => {
 });
 
 test('admin stats, user list and user overview', async () => {
-  let r = await call('GET', '/api/admin/stats', null, admin.accessToken);
+  let r = await call('POST', '/api/track', [{ event: 'product_view', id: 'p1' }, { event: 'product_view', id: 'p1' }, { event: 'bogus' }]);
+  assert.equal(r.status, 202); assert.equal(r.body.counted, 2);
+  r = await call('GET', '/api/admin/stats', null, admin.accessToken);
   assert.equal(r.status, 200); assert.ok(r.body.data.users.total >= 1);
   r = await call('GET', '/api/admin/insights', null, admin.accessToken);
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.data.users.heatmap.length, 7); assert.equal(r.body.data.revenue.monthly.length, 12);
   assert.ok(r.body.data.revenue.total > 0);
+  assert.ok(r.body.data.marketplace.views7 >= 2); assert.ok(r.body.data.marketplace.recent.length >= 1); assert.ok('in_stock' in r.body.data.marketplace.inventory);
   r = await call('GET', '/api/admin/user-list?segment=new', null, admin.accessToken);
   assert.equal(r.status, 200);
   const me = r.body.data.find((u) => u.uid === user.data.uid);

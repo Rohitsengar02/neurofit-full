@@ -31,12 +31,13 @@ const months12 = (list) => {
   return out;
 };
 
-router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_subscriptions', 'live_sessions', 'products', 'posts'], 120), async (_req, res) => {
+router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_subscriptions', 'live_sessions', 'products', 'posts', 'vendors'], 120), async (_req, res) => {
   const [
     retention, platforms, heat, sessions, returning, goalsNew, signups90,
     rev, revDaily, revMonthly, payMethods, byUserType, plans, orderCats, cities, aov, refunds, orderDaily,
     trainerStatus, trainerCats, ratingBuckets, topTrainers, trainerGrowth, liveDaily, earnDaily, payout,
     fitnessUsers, workoutDaily, programs, nutrition, nutritionDaily, txns, ratingDaily, ratingAll, regs, tActs, wTypes, wMuscles, wDone, wDur, wCal, wRecent, wUsersDaily, mealSlots, topFoods, targets,
+    inventory, vendors, viewsDaily, refundDaily, recentOrders, revPrev,
   ] = await Promise.all([
     // ---------- users ----------
     one(`SELECT
@@ -196,6 +197,30 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
           FROM user_records r CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r.data->'meals') = 'array' THEN r.data->'meals' ELSE '[]'::jsonb END) m
           WHERE r.collection = 'nutrition_day' GROUP BY 1 ORDER BY 3 DESC LIMIT 5`),
     one(`SELECT COALESCE(round(avg(NULLIF(data->>'targetCalories','')::numeric)), 0) AS target_kcal FROM user_records WHERE collection = 'nutrition_day'`),
+    one(`SELECT count(*) FILTER (WHERE COALESCE((data->>'stock')::numeric, 999) > COALESCE((data->>'lowStockThreshold')::numeric, 5))::int AS in_stock,
+           count(*) FILTER (WHERE COALESCE((data->>'stock')::numeric, 999) <= COALESCE((data->>'lowStockThreshold')::numeric, 5) AND COALESCE((data->>'stock')::numeric, 999) > 0)::int AS low,
+           count(*) FILTER (WHERE (data->>'stock')::numeric <= 0)::int AS out
+         FROM docs WHERE collection = 'products' AND COALESCE(data->>'stock', '0') ~ '^-?[0-9.]+$' AND COALESCE(data->>'lowStockThreshold', '5') ~ '^[0-9.]+$'`),
+    rows(`SELECT COALESCE(NULLIF(it->>'vendorName', ''), NULLIF(it->>'brand', ''), NULLIF(it->>'storeName', ''), 'NeuroFit Store') AS label,
+             max(COALESCE(it->>'image', it->>'imageUrl', '')) AS image,
+             sum(COALESCE((it->>'price')::numeric, 0) * COALESCE((it->>'quantity')::int, 1)) AS amount
+           FROM docs, jsonb_array_elements(CASE WHEN jsonb_typeof(data->'items') = 'array' THEN data->'items' ELSE '[]'::jsonb END) it
+           WHERE collection = 'orders' AND COALESCE(data->>'orderStatus','') NOT IN ('Cancelled','Returned')
+             AND COALESCE(it->>'price', '0') ~ '^[0-9.]+$' AND COALESCE(it->>'quantity', '1') ~ '^[0-9]+$'
+           GROUP BY 1 ORDER BY 3 DESC LIMIT 5`),
+    rows(`SELECT day, sum(n) AS v FROM counters WHERE event = 'product_view' AND day > current_date - 30 GROUP BY 1`),
+    rows(`SELECT date_trunc('day', updated_at) AS day, COALESCE(sum(${AMT}), 0) AS v FROM docs WHERE collection = 'orders' AND updated_at > now() - interval '30 days'
+           AND data->>'orderStatus' IN ('Cancelled','Returned') AND data->>'totalAmount' ~ '^[0-9.]+$' GROUP BY 1`),
+    rows(`SELECT id, COALESCE(data->>'customerName', 'Customer') AS name, COALESCE(data->>'orderStatus', 'Pending') AS status,
+             CASE WHEN data->>'totalAmount' ~ '^[0-9.]+$' THEN (data->>'totalAmount')::numeric ELSE 0 END AS amount, created_at AS at
+           FROM docs WHERE collection = 'orders' ORDER BY created_at DESC LIMIT 5`),
+    one(`SELECT COALESCE(sum(${AMT}) FILTER (WHERE created_at > now() - interval '7 days'), 0) AS week,
+             COALESCE(sum(${AMT}) FILTER (WHERE created_at <= now() - interval '7 days' AND created_at > now() - interval '14 days'), 0) AS prev_week,
+             count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS orders_week,
+             count(*) FILTER (WHERE created_at <= now() - interval '7 days' AND created_at > now() - interval '14 days')::int AS orders_prev,
+             count(*) FILTER (WHERE data->>'orderStatus' = 'Returned' AND updated_at > now() - interval '7 days')::int AS returns_week,
+             count(*) FILTER (WHERE data->>'orderStatus' = 'Returned' AND updated_at <= now() - interval '7 days' AND updated_at > now() - interval '14 days')::int AS returns_prev
+           FROM docs WHERE collection = 'orders' AND ${PAID.replace("NOT IN ('Cancelled','Returned')", "<> 'Cancelled'")}`),
   ]);
 
   const heatmap = Array.from({ length: 7 }, () => Array(7).fill(0));
@@ -214,6 +239,8 @@ router.get('/', requireAdmin, cached(['users', 'orders', 'trainers', 'trainer_su
     trainers: { status: trainerStatus, categories: trainerCats, ratings: ratingBuckets, top: topTrainers.map(num), growth: fill(trainerGrowth, 30), liveDaily: fill(liveDaily, 30), earningsDaily: fill(earnDaily, 30), payout: payout.map(num), ratingDaily: fill(ratingDaily, 30), rating: num(ratingAll), recent: regs, activity: tActs },
     fitness: { ...num(fitnessUsers), daily: fill(workoutDaily, 30), programs, types: wTypes, muscles: wMuscles, completion: num(wDone),
       durationDaily: fill(wDur, 30), caloriesDaily: fill(wCal, 30), recent: wRecent, usersDaily: fill(wUsersDaily, 30) },
+    marketplace: { inventory: num(inventory), vendors: vendors.map(num), viewsDaily: fill(viewsDaily, 30), refundDaily: fill(refundDaily, 30), recent: recentOrders.map(num), ...num(revPrev),
+      views7: fill(viewsDaily, 7).reduce((a, b) => a + b.value, 0) },
     nutrition: { ...num(nutrition), daily: fill(nutritionDaily, 30), slots: mealSlots.map(num), topFoods: topFoods.map(num), ...num(targets) },
   } });
 });

@@ -69,6 +69,7 @@ app.use('/api/panel', require('./routes/trainers').panel);
 app.use('/api/community', require('./routes/community').router);
 app.use('/api/live', require('./routes/live').router);
 app.use('/api/media', require('./routes/media').router);
+app.use('/api/track', rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false }), require('./routes/track').router);
 app.use('/api', require('./routes/nutrition').router);
 collections.mount(app);
 app.use('/fs', require('./routes/firestore').router);
