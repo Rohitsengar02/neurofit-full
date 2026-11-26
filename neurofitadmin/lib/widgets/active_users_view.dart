@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'user_detail_bottom_sheet.dart';
+import 'net_or_asset_image.dart';
+import '../backend/admin_data.dart';
 
 class ActiveUsersView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,92 +22,26 @@ class ActiveUsersView extends StatefulWidget {
 class _ActiveUsersViewState extends State<ActiveUsersView> {
   String _searchQuery = '';
 
-  final List<Map<String, dynamic>> _activeUsersList = const [
-    {
-      'name': 'Rohit Sharma',
-      'email': 'rohit.s@gmail.com',
-      'phone': '+91 99887 76655',
-      'lastActive': '2 min ago',
-      'streak': '🔥 24 Days',
-      'workouts': '56 Done',
-      'plan': 'Pro Member',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'status': 'Online',
-      'avatarBg': Color(0xFFDCFCE7),
-      'img': 'assets/images/trainers_hero_banner.jpg',
-    },
-    {
-      'name': 'Ananya Roy',
-      'email': 'ananya.roy@gmail.com',
-      'phone': '+91 98123 45678',
-      'lastActive': 'Just now',
-      'streak': '🔥 18 Days',
-      'workouts': '42 Done',
-      'plan': 'Pro Member',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'status': 'Online',
-      'avatarBg': Color(0xFFEDE9FE),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-    },
-    {
-      'name': 'Siddharth Rao',
-      'email': 'sid.rao@gmail.com',
-      'phone': '+91 87654 98765',
-      'lastActive': '15 min ago',
-      'streak': '🔥 32 Days',
-      'workouts': '78 Done',
-      'plan': 'Pro Member',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'status': 'Active',
-      'avatarBg': Color(0xFFFFEDD5),
-      'img': 'assets/images/hero_banner_4.png',
-    },
-    {
-      'name': 'Deepika Nair',
-      'email': 'deepika.n@gmail.com',
-      'phone': '+91 76543 87654',
-      'lastActive': '1 hour ago',
-      'streak': '🔥 14 Days',
-      'workouts': '31 Done',
-      'plan': 'Free Tier',
-      'planColor': Color(0xFF3B82F6),
-      'planBg': Color(0xFFEFF6FF),
-      'status': 'Active',
-      'avatarBg': Color(0xFFFEF3C7),
-      'img': 'assets/images/hero_banner_1.png',
-    },
-    {
-      'name': 'Manish Kulkarni',
-      'email': 'manish.k@gmail.com',
-      'phone': '+91 84321 76543',
-      'lastActive': '3 hours ago',
-      'streak': '🔥 9 Days',
-      'workouts': '18 Done',
-      'plan': 'Free Tier',
-      'planColor': Color(0xFF3B82F6),
-      'planBg': Color(0xFFEFF6FF),
-      'status': 'Active',
-      'avatarBg': Color(0xFFDBEAFE),
-      'img': 'assets/images/workout_banner_1.png',
-    },
-    {
-      'name': 'Sneha Kapoor',
-      'email': 'sneha.k@gmail.com',
-      'phone': '+91 73456 65432',
-      'lastActive': 'Just now',
-      'streak': '🔥 45 Days',
-      'workouts': '95 Done',
-      'plan': 'Pro Member',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'status': 'Online',
-      'avatarBg': Color(0xFFF5F3FF),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-    },
-  ];
+  AdminUsers get _src => AdminUsers.of('active');
+  List<Map<String, dynamic>> get _activeUsersList => _src.rows;
+
+  void _changed() { if (mounted) setState(() {}); }
+
+  @override
+  void initState() {
+    super.initState();
+    _src.addListener(_changed);
+    AdminStats.I.addListener(_changed);
+    _src.load();
+    AdminStats.I.load();
+  }
+
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    AdminStats.I.removeListener(_changed);
+    super.dispose();
+  }
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -133,10 +69,11 @@ class _ActiveUsersViewState extends State<ActiveUsersView> {
   }
 
   Widget _buildTopKpiCarousel() {
+    final st = AdminStats.I;
     final kpis = [
-      {'title': 'Active Today', 'val': '8,450', 'growth': '12.4% vs yesterday', 'icon': Icons.how_to_reg_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'DAU / MAU Ratio', 'val': '64.2%', 'growth': '+4.8% stickiness', 'icon': Icons.insights_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Avg. Session', 'val': '28m 14s', 'growth': '+6.2% time spent', 'icon': Icons.timer_outlined, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Active Today', 'val': fmtInt(st.n('users','dau')), 'growth': '${fmtInt(st.n('users','online'))} online now', 'icon': Icons.how_to_reg_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'DAU / MAU Ratio', 'val': fmtPct(st.n('users','mau') == 0 ? 0 : st.n('users','dau') / st.n('users','mau') * 100), 'growth': '${fmtInt(st.n('users','mau'))} active this month', 'icon': Icons.insights_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Weekly Active', 'val': fmtInt(st.n('users','wau')), 'growth': st.growthLabel('active'), 'icon': Icons.timer_outlined, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return SingleChildScrollView(
@@ -310,7 +247,7 @@ class _ActiveUsersViewState extends State<ActiveUsersView> {
                     decoration: BoxDecoration(color: u['avatarBg'] as Color, shape: BoxShape.circle),
                     padding: const EdgeInsets.all(2),
                     child: ClipOval(
-                      child: Image.asset(
+                      child: NetOrAssetImage(
                         u['img'] as String,
                         fit: BoxFit.cover,
                         errorBuilder: (c, e, s) => const Icon(Icons.person, size: 24, color: Color(0xFF64748B)),

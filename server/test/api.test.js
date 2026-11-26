@@ -170,6 +170,12 @@ test('trainer apply → approve → subscribe → chat → panel', async () => {
   assert.equal(r.status, 201);
   r = await call('GET', '/api/live/sessions?status=live');
   assert.ok(r.body.data.some((s) => s.title === 'Morning HIIT'));
+  r = await call('GET', `/api/admin/trainers/${coach.data.uid}/detail`, null, admin.accessToken);
+  assert.equal(r.status, 200); assert.equal(r.body.data.active, 1); assert.ok(r.body.data.replyMinutes !== undefined);
+  r = await call('GET', '/api/admin/trainers', null, admin.accessToken);
+  assert.ok(r.body.data.find((t) => t.id === coach.data.uid).revenue30d > 0);
+  r = await call('POST', `/api/admin/trainers/${coach.data.uid}/assign`, { email: user2 ? user2.data.email : user.data.email }, admin.accessToken);
+  assert.equal(r.status, 201); assert.equal(r.body.data.paymentStatus, 'complimentary');
 });
 
 test('community', async () => {
@@ -214,4 +220,19 @@ test('admin stats', async () => {
   assert.equal(r.body.data.series.signups.length, 30);
   const u = await call('GET', '/api/users?q=renamed', null, admin.accessToken);
   assert.ok(u.body.data.length >= 1);
+});
+
+test('admin stats, user list and user overview', async () => {
+  let r = await call('GET', '/api/admin/stats', null, admin.accessToken);
+  assert.equal(r.status, 200); assert.ok(r.body.data.users.total >= 1);
+  r = await call('GET', '/api/admin/user-list?segment=new', null, admin.accessToken);
+  assert.equal(r.status, 200);
+  const me = r.body.data.find((u) => u.uid === user.data.uid);
+  assert.ok(me); assert.ok(me.streak >= 1); assert.ok(me.orderCount >= 1);
+  r = await call('GET', '/api/admin/user-list?segment=premium', null, admin.accessToken);
+  assert.equal(r.status, 200);
+  r = await call('GET', `/api/admin/users/${user.data.uid}/overview`, null, admin.accessToken);
+  assert.equal(r.status, 200); assert.equal(r.body.data.user.uid, user.data.uid);
+  r = await call('GET', '/api/admin/user-list', null, user.accessToken);
+  assert.equal(r.status, 403);
 });

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+import 'net_or_asset_image.dart';
 
 void showTrainerDetailModal(BuildContext context, Map<String, dynamic> t) {
   showModalBottomSheet(
@@ -25,6 +28,45 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _load();
+  }
+
+  Map<String, dynamic> _d = {};
+  List<Map<String, dynamic>> get _clients => [for (final c in (_d['clients'] as List? ?? const [])) Map<String, dynamic>.from(c as Map)];
+
+  Future<void> _load() async {
+    try {
+      final j = await Api.get('/admin/trainers/${widget.trainer['id']}/detail');
+      if (mounted) setState(() => _d = Map<String, dynamic>.from(j['data'] as Map));
+    } catch (_) {}
+  }
+
+  Future<void> _act(Future<void> Function() f, String ok, Color color) async {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    try {
+      await f();
+      messenger.showSnackBar(SnackBar(content: Text(ok), backgroundColor: color, behavior: SnackBarBehavior.floating));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e'), backgroundColor: const Color(0xFFEF4444), behavior: SnackBarBehavior.floating));
+    }
+  }
+
+  Future<void> _assign(Map<String, dynamic> t) async {
+    final ctrl = TextEditingController();
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Assign trainee to ${t['name']}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+        content: TextField(controller: ctrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(hintText: "Trainee's email")),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Assign')),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty || !mounted) return;
+    await _act(() async { await AdminTrainers.I.assign('${t['id']}', email); }, 'Trainee assigned to ${t['name']}', const Color(0xFF06B6D4));
   }
 
   @override
@@ -33,16 +75,6 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
     super.dispose();
   }
 
-  void _showSnackbar(String msg, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 12)),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +108,7 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
                         border: Border.all(color: isVip ? Colors.amber.shade400 : Colors.grey.shade200, width: 2),
                       ),
                       child: ClipOval(
-                        child: Image.asset(t['img'] as String, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person, size: 36)),
+                        child: NetOrAssetImage(t['img'] as String, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.person, size: 36)),
                       ),
                     ),
                     if (isVip)
@@ -111,8 +143,8 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text(t['specialty'] as String? ?? 'Hypertrophy & Fat Loss', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF06B6D4))),
-                      Text('${t['rating']} (340+ Reviews) • ${t['experience'] ?? "6+ Years Exp"}', style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
+                      Text(t['specialty'] as String? ?? '', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF06B6D4))),
+                      Text('${t['rating']} (${t['reviewsCount']}) • ${t['experience'] ?? ''}', style: const TextStyle(fontSize: 9.5, color: Color(0xFF64748B))),
                     ],
                   ),
                 ),
@@ -139,11 +171,11 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
             indicatorWeight: 2.5,
             labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
             unselectedLabelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-            tabs: const [
-              Tab(text: 'Overview & Rates'),
-              Tab(text: 'Premium Trainees (48)'),
-              Tab(text: 'Packages & Services'),
-              Tab(text: 'Performance & Reviews'),
+            tabs: [
+              const Tab(text: 'Overview & Rates'),
+              Tab(text: 'Premium Trainees (${_d['active'] ?? t['clientsCount'] ?? 0})'),
+              const Tab(text: 'Packages & Services'),
+              const Tab(text: 'Performance & Reviews'),
             ],
           ),
           const Divider(height: 1, thickness: 0.8, color: Color(0xFFF1F5F9)),
@@ -177,10 +209,7 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _showSnackbar('Assign Trainee modal opened for ${t['name']}', const Color(0xFF06B6D4));
-                    },
+                    onPressed: () => _assign(t),
                     icon: const Icon(Icons.person_add_alt_1_rounded, size: 14, color: Colors.white),
                     label: const Text('Assign Trainee', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
                   ),
@@ -193,20 +222,15 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _showSnackbar('${t['name']} VIP status updated!', const Color(0xFFF59E0B));
-                    },
+                    onPressed: () => _act(() => AdminTrainers.I.setVip('${t['id']}', !isVip), '${t['name']} VIP status updated!', const Color(0xFFF59E0B)),
                     icon: Icon(isVip ? Icons.star_border_rounded : Icons.workspace_premium_rounded, size: 14, color: Colors.white),
                     label: Text(isVip ? 'Remove VIP' : '👑 Set as VIP', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showSnackbar('Trainer ${t['name']} suspended.', const Color(0xFFEF4444));
-                  },
+                  onPressed: () => _act(() => AdminTrainers.I.setStatus('${t['id']}', t['rawStatus'] == 'suspended' ? 'approve' : 'suspend'),
+                      t['rawStatus'] == 'suspended' ? 'Trainer ${t['name']} reactivated.' : 'Trainer ${t['name']} suspended.', const Color(0xFFEF4444)),
                   icon: Container(
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.red.shade200)),
@@ -230,10 +254,10 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildStatCard('Active Clients', '48 Athletes', Icons.groups_rounded, const Color(0xFF3B82F6)),
-            _buildStatCard('Monthly Rev.', '₹1,84,000', Icons.account_balance_wallet_rounded, const Color(0xFF10B981)),
-            _buildStatCard('Sessions Done', '1,420', Icons.done_all_rounded, const Color(0xFF8B5CF6)),
-            _buildStatCard('Client SLA', '98.2%', Icons.speed_rounded, const Color(0xFF06B6D4)),
+            _buildStatCard('Active Clients', '${_d['active'] ?? t['clientsCount'] ?? 0} Athletes', Icons.groups_rounded, const Color(0xFF3B82F6)),
+            _buildStatCard('Monthly Rev.', fmtInr(t['revenue30d'] as num? ?? 0), Icons.account_balance_wallet_rounded, const Color(0xFF10B981)),
+            _buildStatCard('Check-ins', fmtInt(_clients.fold<num>(0, (a, c) => a + (c['checkins'] as num? ?? 0))), Icons.done_all_rounded, const Color(0xFF8B5CF6)),
+            _buildStatCard('Retention', fmtPct(_d['retention'] as num? ?? 0), Icons.speed_rounded, const Color(0xFF06B6D4)),
           ],
         ),
         const SizedBox(height: 16),
@@ -257,9 +281,8 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
                 ],
               ),
               const Divider(height: 16, thickness: 0.8, color: Color(0xFFE2E8F0)),
-              _buildPriceRow('1-on-1 Monthly VIP Mentorship', t['monthlyRate'] ?? '₹9,999 / mo', '85% Payout to Coach'),
-              _buildPriceRow('Custom Workout & Diet Protocol', t['planRate'] ?? '₹3,499 / plan', '80% Payout to Coach'),
-              _buildPriceRow('Live Video Consultation (45m)', t['callRate'] ?? '₹1,299 / session', '90% Payout to Coach'),
+              for (final p in (t['plans'] as List? ?? const []))
+                if (p is Map) _buildPriceRow('${p['name']} plan (${p['months']} mo)', fmtInr(p['price'] as num? ?? 0), '85% Payout to Coach'),
               _buildPriceRow('Platform Commission Split', '15% Flat', 'Auto deducted on payout'),
             ],
           ),
@@ -273,10 +296,9 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
           spacing: 6,
           runSpacing: 6,
           children: [
-            _buildCertBadge('📜 ACE Certified Personal Trainer'),
-            _buildCertBadge('🏋️ CSCS Strength & Conditioning'),
-            _buildCertBadge('🥗 Precision Nutrition Level 1'),
-            _buildCertBadge('🩺 CPR & AED First Aid Certified'),
+            for (final c in (t['certifications'] is List ? t['certifications'] as List : const []))
+              _buildCertBadge('📜 ${c is Map ? (c['name'] ?? c['title'] ?? '') : c}'),
+            if (t['certifications'] is! List || (t['certifications'] as List).isEmpty) _buildCertBadge('No certificates uploaded'),
           ],
         ),
       ],
@@ -314,11 +336,8 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
 
   Widget _buildTraineesTab() {
     final clients = [
-      {'name': 'Dr. Vikram Seth', 'plan': 'VIP Mentorship', 'streak': '🔥 45 Days', 'adherence': '96%', 'avatar': 'assets/images/trainers_hero_banner.jpg'},
-      {'name': 'Rhea Singhania', 'plan': 'Elite Annual', 'streak': '🔥 32 Days', 'adherence': '94%', 'avatar': 'assets/images/athlete_transform_1787825621309.jpg'},
-      {'name': 'Karan Mehta', 'plan': 'Pro Quarterly', 'streak': '🔥 28 Days', 'adherence': '88%', 'avatar': 'assets/images/hero_banner_4.png'},
-      {'name': 'Pooja Mehta', 'plan': 'VIP Mentorship', 'streak': '🔥 19 Days', 'adherence': '92%', 'avatar': 'assets/images/hero_banner_1.png'},
-      {'name': 'Siddharth Rao', 'plan': 'Custom Protocol', 'streak': '🔥 14 Days', 'adherence': '85%', 'avatar': 'assets/images/workout_banner_1.png'},
+      for (final c in _clients)
+        {'name': c['name'], 'plan': c['planName'], 'streak': '${c['active'] == true ? '🔥' : '⏸'} ${c['days']} Days', 'adherence': '${c['adherence']}%', 'avatar': c['photo'] ?? ''},
     ];
 
     return ListView.builder(
@@ -337,7 +356,7 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
           ),
           child: Row(
             children: [
-              CircleAvatar(radius: 18, backgroundImage: AssetImage(c['avatar'] as String)),
+              CircleAvatar(radius: 18, backgroundColor: const Color(0xFFE2E8F0), backgroundImage: '${c['avatar']}'.startsWith('http') ? NetworkImage('${c['avatar']}') : null, child: '${c['avatar']}'.startsWith('http') ? null : const Icon(Icons.person, size: 18, color: Color(0xFF64748B))),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -362,8 +381,9 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
 
   Widget _buildPackagesTab(Map<String, dynamic> t) {
     final packages = [
-      {'name': 'Gold 1-on-1 Monthly Mentorship', 'price': t['monthlyRate'] ?? '₹9,999', 'features': ['Daily WhatsApp check-in', 'Custom progressive workout split', 'Weekly macro adjustments', 'Form audit videos']},
-      {'name': 'Hypertrophy Transformation Plan', 'price': t['planRate'] ?? '₹3,499', 'features': ['12-Week complete workout PDF', 'Personalized meal schedule', 'Exercise replacement guide']},
+      for (final p in (t['plans'] as List? ?? const []))
+        if (p is Map)
+          {'name': '${p['name']} · ${p['months']} month${p['months'] == 1 ? '' : 's'}', 'price': fmtInr(p['price'] as num? ?? 0), 'features': [for (final f in (p['perks'] as List? ?? const [])) '$f']},
     ];
 
     return ListView(
@@ -410,10 +430,10 @@ class _TrainerDetailBottomSheetState extends State<_TrainerDetailBottomSheet> wi
           decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
           child: Column(
             children: [
-              _buildMetricRow('Client Transformation Rate', '94.2%', const Color(0xFF10B981)),
-              _buildMetricRow('Monthly Client Retention', '88.6%', const Color(0xFF3B82F6)),
-              _buildMetricRow('Avg. Response Time to Trainees', '14 mins', const Color(0xFF06B6D4)),
-              _buildMetricRow('Overall Satisfaction Score', '4.95 / 5.0', const Color(0xFFF59E0B)),
+              _buildMetricRow('Clients Checking In', fmtPct(_d['engaged'] as num? ?? 0), const Color(0xFF10B981)),
+              _buildMetricRow('Monthly Client Retention', fmtPct(_d['retention'] as num? ?? 0), const Color(0xFF3B82F6)),
+              _buildMetricRow('Avg. Response Time to Trainees', _d['replyMinutes'] == null ? '-' : '${_d['replyMinutes']} mins', const Color(0xFF06B6D4)),
+              _buildMetricRow('Overall Satisfaction Score', '${t['rating']} / 5.0', const Color(0xFFF59E0B)),
             ],
           ),
         ),

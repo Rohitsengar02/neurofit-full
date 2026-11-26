@@ -178,6 +178,45 @@ router.get('/users/:uid/overview', requireAdmin, async (req, res) => {
   } });
 });
 
+// User lists for the admin "New / Active / Premium" screens, with each user's
+// workouts, streak, spend and trainer subscription in one call.
+router.get('/user-list', requireAdmin, cached(['users', 'orders', 'trainer_subscriptions'], 30), async (req, res) => {
+  const seg = String(req.query.segment || 'all');
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  const where = [`role NOT IN ('admin','superadmin')`];
+  if (seg === 'new') where.push(`created_at > now() - interval '30 days'`);
+  if (seg === 'active') where.push(`last_active_at > now() - interval '7 days'`);
+  if (seg === 'premium') where.push(`(is_premium OR id IN (SELECT owner_id FROM docs WHERE collection = 'trainer_subscriptions' AND owner_id IS NOT NULL))`);
+  if (seg === 'unverified') where.push('NOT is_verified');
+  if (seg === 'suspended') where.push(`status <> 'active'`);
+  const order = seg === 'active' ? 'last_active_at DESC NULLS LAST' : 'created_at DESC';
+  const users = (await query(`SELECT * FROM users WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ${limit}`)).rows;
+  const ids = users.map((u) => u.id);
+  if (!ids.length) return res.json({ success: true, data: [] });
+  const [w, o, s, d] = await Promise.all([
+    query(`SELECT user_id, count(*) FILTER (WHERE data->>'dayCompleted' = 'true')::int AS done FROM user_records WHERE collection = 'workout_progress' AND user_id = ANY($1) GROUP BY user_id`, [ids]),
+    query(`SELECT owner_id, count(*)::int AS n, COALESCE(sum((data->>'totalAmount')::numeric) FILTER (WHERE data->>'totalAmount' ~ '^[0-9.]+$'), 0) AS spend FROM docs WHERE collection = 'orders' AND owner_id = ANY($1) GROUP BY owner_id`, [ids]),
+    query(`SELECT DISTINCT ON (owner_id) owner_id, data FROM docs WHERE collection = 'trainer_subscriptions' AND owner_id = ANY($1) ORDER BY owner_id, created_at DESC`, [ids]),
+    query(`SELECT DISTINCT user_id, date_trunc('day', client_updated_at)::date AS d FROM user_records WHERE user_id = ANY($1) AND client_updated_at > now() - interval '90 days' ORDER BY user_id, d DESC`, [ids]),
+  ]);
+  const by = (rows, k) => new Map(rows.map((r) => [r[k], r]));
+  const wm = by(w.rows, 'user_id'), om = by(o.rows, 'owner_id'), sm = by(s.rows, 'owner_id');
+  const days = new Map();
+  for (const r of d.rows) { if (!days.has(r.user_id)) days.set(r.user_id, []); days.get(r.user_id).push(r.d); }
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const { userJson } = require('../lib/auth');
+  res.json({ success: true, data: users.map((u) => {
+    let streak = 0, next = null;
+    for (const x of days.get(u.id) || []) {
+      const t = new Date(x); t.setUTCHours(0, 0, 0, 0);
+      const gap = Math.round((today - t) / 864e5);
+      if (next === null ? gap <= 1 : gap === next) { streak++; next = gap + 1; } else break;
+    }
+    const sub = sm.get(u.id);
+    return { ...userJson(u), workoutsDone: wm.get(u.id)?.done || 0, orderCount: om.get(u.id)?.n || 0, spend: Number(om.get(u.id)?.spend || 0) + Number(sub?.data?.amount || 0), streak, subscription: sub ? sub.data : null };
+  }) });
+});
+
 // Health of the moving parts, for the admin settings page.
 router.get('/system', requireAdmin, async (_req, res) => {
   const t = Date.now();

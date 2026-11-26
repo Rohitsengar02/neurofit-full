@@ -125,27 +125,31 @@ router.post('/:id/follow', requireAuth, async (req, res) => {
   res.json({ success: true, following: !del.rowCount });
 });
 
+async function startSubscription(row, userId, planName, { id, paymentId, complimentary } = {}) {
+  const t = await trainerJson(row);
+  const plan = t.plans.find((p) => p.name === planName) || t.plans[0];
+  // one active subscription at a time
+  await query(`UPDATE docs SET data = data || '{"status":"cancelled"}'::jsonb WHERE collection = 'trainer_subscriptions' AND owner_id = $1 AND data->>'status' = 'active'`, [userId]);
+  const me = await one('SELECT name, photo_url FROM users WHERE id = $1', [userId]);
+  const subId = id || docs.newId('tsub');
+  const since = new Date();
+  const until = new Date(since.getTime() + 30 * 864e5 * Number(plan.months || 1));
+  const sub = await docs.upsert('trainer_subscriptions', subId, {
+    trainerId: row.id, trainerName: t.name, userId, userName: me ? me.name : '', userPhoto: me ? me.photo_url : '',
+    planName: plan.name, months: plan.months, amount: complimentary ? 0 : plan.price, since: since.toISOString(), until: until.toISOString(),
+    status: 'active', paymentStatus: complimentary ? 'complimentary' : (paymentId ? 'paid' : 'pending'), paymentId: paymentId || null,
+  }, { ownerId: userId });
+  await docs.upsert('messages', docs.newId('msg'), { thread: `${row.id}|${userId}`, fromId: row.id, text: `Hey ${me ? me.name.split(' ')[0] : 'there'}! Welcome aboard 🎉 Tell me your main goal for the next 12 weeks?`, readByUser: false, readByTrainer: true });
+  notify({ userId: row.id, title: 'New client', body: `${me ? me.name : 'Someone'} subscribed to your ${plan.name} plan`, type: 'trainer', refId: subId }).catch(() => {});
+  notify({ userId, title: `Welcome to ${t.name}'s team`, body: `Your ${plan.name.toLowerCase()} plan is active.`, type: 'plan', refId: subId }).catch(() => {});
+  return { ...docs.toItem(sub), trainer: t };
+}
+
 router.post('/:id/subscribe', requireAuth, async (req, res) => {
   const row = await docs.get('trainers', req.params.id);
   if (!row || row.data.status !== 'approved') return res.status(404).json({ success: false, message: 'Trainer not found' });
   if (row.data.accepting === false) return res.status(409).json({ success: false, message: 'This coach is not taking new clients right now.' });
-  const t = await trainerJson(row);
-  const plan = t.plans.find((p) => p.name === req.body.planName) || t.plans[0];
-  // one active subscription at a time
-  await query(`UPDATE docs SET data = data || '{"status":"cancelled"}'::jsonb WHERE collection = 'trainer_subscriptions' AND owner_id = $1 AND data->>'status' = 'active'`, [req.user.id]);
-  const me = await one('SELECT name, photo_url FROM users WHERE id = $1', [req.user.id]);
-  const id = req.body.id || docs.newId('tsub');
-  const since = new Date();
-  const until = new Date(since.getTime() + 30 * 864e5 * Number(plan.months || 1));
-  const sub = await docs.upsert('trainer_subscriptions', id, {
-    trainerId: row.id, trainerName: t.name, userId: req.user.id, userName: me ? me.name : '', userPhoto: me ? me.photo_url : '',
-    planName: plan.name, months: plan.months, amount: plan.price, since: since.toISOString(), until: until.toISOString(),
-    status: 'active', paymentStatus: req.body.paymentId ? 'paid' : 'pending', paymentId: req.body.paymentId || null,
-  }, { ownerId: req.user.id });
-  await docs.upsert('messages', docs.newId('msg'), { thread: `${row.id}|${req.user.id}`, fromId: row.id, text: `Hey ${me ? me.name.split(' ')[0] : 'there'}! Welcome aboard 🎉 Tell me your main goal for the next 12 weeks?`, readByUser: false, readByTrainer: true });
-  notify({ userId: row.id, title: 'New client', body: `${me ? me.name : 'Someone'} subscribed to your ${plan.name} plan`, type: 'trainer', refId: id }).catch(() => {});
-  notify({ userId: req.user.id, title: `Welcome to ${t.name}'s team`, body: `Your ${plan.name.toLowerCase()} plan is active.`, type: 'plan', refId: id }).catch(() => {});
-  res.status(201).json({ success: true, data: { ...docs.toItem(sub), trainer: t } });
+  res.status(201).json({ success: true, data: await startSubscription(row, req.user.id, req.body.planName, { id: req.body.id, paymentId: req.body.paymentId }) });
 });
 
 async function threadMessages(thread, limit = 200) {
@@ -356,7 +360,16 @@ admin.get('/', async (req, res) => {
   const filters = {};
   if (req.query.status) filters.status = req.query.status;
   const rows = await docs.list('trainers', { filters, order: 'new', limit: 1000, search: req.query.q, searchFields: ['name', 'email', 'city', 'cat'] });
-  res.json({ success: true, data: await Promise.all(rows.map((r) => trainerJson(r))) });
+  const money = await query(`SELECT data->>'trainerId' AS t,
+      COALESCE(sum((data->>'amount')::numeric) FILTER (WHERE created_at > now() - interval '30 days'), 0) AS revenue30d,
+      COALESCE(sum((data->>'amount')::numeric), 0) AS revenue,
+      count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS new30d
+    FROM docs WHERE collection = 'trainer_subscriptions' GROUP BY 1`);
+  const m = new Map(money.rows.map((r) => [r.t, r]));
+  res.json({ success: true, data: await Promise.all(rows.map(async (r) => {
+    const x = m.get(r.id);
+    return { ...(await trainerJson(r)), revenue30d: Number(x?.revenue30d || 0), revenue: Number(x?.revenue || 0), newClients30d: x?.new30d || 0 };
+  })) });
 });
 
 async function setTrainerStatus(req, res, status) {
@@ -370,6 +383,54 @@ async function setTrainerStatus(req, res, status) {
   notify({ userId: row.id, title: status === 'approved' ? 'You are now a NeuroFit coach 🎉' : 'Coach application update', body: status === 'approved' ? 'Your coach profile is live. Open the trainer panel to add plans.' : `Your application was ${status}.${patch.reviewNote ? ' ' + patch.reviewNote : ''}`, type: 'trainer' }).catch(() => {});
   res.json({ success: true, data: await trainerJson(updated) });
 }
+// Everything the admin trainer sheet shows: clients, check-ins, retention and reply time.
+admin.get('/:id/detail', async (req, res) => {
+  const id = req.params.id;
+  const [subs, chk, reply] = await Promise.all([
+    query(`SELECT s.owner_id, s.data, s.created_at, u.name, u.photo_url
+             FROM docs s LEFT JOIN users u ON u.id = s.owner_id
+            WHERE s.collection = 'trainer_subscriptions' AND s.data->>'trainerId' = $1 ORDER BY s.created_at DESC LIMIT 200`, [id]),
+    query(`SELECT owner_id, count(*)::int AS n, max(created_at) AS last FROM docs WHERE collection = 'checkins' AND data->>'trainerId' = $1 GROUP BY owner_id`, [id]),
+    one(`SELECT avg(EXTRACT(EPOCH FROM (r.created_at - m.created_at)) / 60) AS mins
+           FROM docs m
+           JOIN LATERAL (SELECT created_at FROM docs r WHERE r.collection = 'messages' AND r.data->>'thread' = m.data->>'thread'
+                          AND r.data->>'fromId' = $1 AND r.created_at > m.created_at ORDER BY r.created_at LIMIT 1) r ON true
+          WHERE m.collection = 'messages' AND m.data->>'thread' LIKE $1 || '|%' AND m.data->>'fromId' <> $1
+            AND m.created_at > now() - interval '60 days'`, [id]),
+  ]);
+  const cm = new Map(chk.rows.map((r) => [r.owner_id, r]));
+  const now = Date.now();
+  const clients = subs.rows.map((s) => {
+    const since = Date.parse(s.data.since || s.created_at);
+    const c = cm.get(s.owner_id);
+    const weeks = Math.max(1, Math.ceil((now - since) / (7 * 864e5)));
+    return {
+      userId: s.owner_id, name: s.name || s.data.userName || 'Client', photo: s.photo_url || s.data.userPhoto || '',
+      planName: s.data.planName || 'Coaching', since: s.data.since, until: s.data.until, amount: Number(s.data.amount || 0),
+      active: Date.parse(s.data.until) > now && s.data.status !== 'cancelled',
+      days: Math.max(0, Math.floor((now - since) / 864e5)), checkins: c ? c.n : 0,
+      adherence: Math.min(100, Math.round(((c ? c.n : 0) / weeks) * 100)),
+    };
+  });
+  const total = clients.length, active = clients.filter((c) => c.active).length;
+  res.json({ success: true, data: {
+    clients, total, active,
+    retention: total ? Math.round((active / total) * 1000) / 10 : 0,
+    engaged: total ? Math.round((clients.filter((c) => c.checkins > 0).length / total) * 1000) / 10 : 0,
+    replyMinutes: reply && reply.mins != null ? Math.round(Number(reply.mins)) : null,
+  } });
+});
+
+// Admin puts a user on a coach's plan (complimentary, no payment).
+admin.post('/:id/assign', async (req, res) => {
+  const row = await docs.get('trainers', req.params.id);
+  if (!row || row.data.status !== 'approved') return res.status(404).json({ success: false, message: 'Trainer not found' });
+  const b = req.body || {};
+  const u = b.userId ? await one('SELECT id FROM users WHERE id = $1', [b.userId]) : await one('SELECT id FROM users WHERE email = lower($1)', [String(b.email || '').trim()]);
+  if (!u) return res.status(404).json({ success: false, message: 'No user with that email' });
+  res.status(201).json({ success: true, data: await startSubscription(row, u.id, b.planName, { complimentary: true }) });
+});
+
 admin.post('/:id/approve', (req, res) => setTrainerStatus(req, res, 'approved'));
 admin.post('/:id/reject', (req, res) => setTrainerStatus(req, res, 'rejected'));
 admin.post('/:id/suspend', (req, res) => setTrainerStatus(req, res, 'suspended'));

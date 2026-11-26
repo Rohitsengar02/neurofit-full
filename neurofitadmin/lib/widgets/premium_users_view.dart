@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'user_detail_bottom_sheet.dart';
+import 'net_or_asset_image.dart';
+import '../backend/admin_data.dart';
 
 class PremiumUsersView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,92 +22,26 @@ class PremiumUsersView extends StatefulWidget {
 class _PremiumUsersViewState extends State<PremiumUsersView> {
   String _searchQuery = '';
 
-  final List<Map<String, dynamic>> _premiumUsersList = const [
-    {
-      'name': 'Dr. Vikram Seth',
-      'email': 'vikram.seth@gmail.com',
-      'phone': '+91 99112 23344',
-      'tier': 'VIP Mentorship',
-      'expiry': 'Renews in 45d',
-      'trainer': 'Amit Sharma',
-      'spend': '₹12,499',
-      'badge': 'VIP',
-      'badgeColor': Color(0xFFF59E0B),
-      'badgeBg': Color(0xFFFEF3C7),
-      'avatarBg': Color(0xFFFEF3C7),
-      'img': 'assets/images/trainers_hero_banner.jpg',
-    },
-    {
-      'name': 'Rhea Singhania',
-      'email': 'rhea.s@gmail.com',
-      'phone': '+91 98223 34455',
-      'tier': 'Elite Annual',
-      'expiry': 'Renews in 180d',
-      'trainer': 'Priya Patel',
-      'spend': '₹8,999',
-      'badge': 'Elite',
-      'badgeColor': Color(0xFF8B5CF6),
-      'badgeBg': Color(0xFFF5F3FF),
-      'avatarBg': Color(0xFFEDE9FE),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-    },
-    {
-      'name': 'Aditya Birla',
-      'email': 'aditya.b@gmail.com',
-      'phone': '+91 97334 45566',
-      'tier': 'Pro Quarterly',
-      'expiry': 'Renews in 24d',
-      'trainer': 'Rahul Verma',
-      'spend': '₹3,499',
-      'badge': 'Pro',
-      'badgeColor': Color(0xFF10B981),
-      'badgeBg': Color(0xFFECFDF5),
-      'avatarBg': Color(0xFFDCFCE7),
-      'img': 'assets/images/hero_banner_4.png',
-    },
-    {
-      'name': 'Kavita Chawla',
-      'email': 'kavita.c@gmail.com',
-      'phone': '+91 96445 56677',
-      'tier': 'Elite Annual',
-      'expiry': 'Renews in 92d',
-      'trainer': 'Neha Singh',
-      'spend': '₹8,999',
-      'badge': 'Elite',
-      'badgeColor': Color(0xFF8B5CF6),
-      'badgeBg': Color(0xFFF5F3FF),
-      'avatarBg': Color(0xFFFFEDD5),
-      'img': 'assets/images/hero_banner_1.png',
-    },
-    {
-      'name': 'Sameer Deshmukh',
-      'email': 'sameer.d@gmail.com',
-      'phone': '+91 95556 67788',
-      'tier': 'VIP Mentorship',
-      'expiry': 'Renews in 12d',
-      'trainer': 'Amit Sharma',
-      'spend': '₹12,499',
-      'badge': 'VIP',
-      'badgeColor': Color(0xFFF59E0B),
-      'badgeBg': Color(0xFFFEF3C7),
-      'avatarBg': Color(0xFFDBEAFE),
-      'img': 'assets/images/workout_banner_1.png',
-    },
-    {
-      'name': 'Meera Sen',
-      'email': 'meera.sen@gmail.com',
-      'phone': '+91 94667 78899',
-      'tier': 'Pro Quarterly',
-      'expiry': 'Renews in 60d',
-      'trainer': 'Priya Patel',
-      'spend': '₹3,499',
-      'badge': 'Pro',
-      'badgeColor': Color(0xFF10B981),
-      'badgeBg': Color(0xFFECFDF5),
-      'avatarBg': Color(0xFFF5F3FF),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-    },
-  ];
+  AdminUsers get _src => AdminUsers.of('premium');
+  List<Map<String, dynamic>> get _premiumUsersList => _src.rows;
+
+  void _changed() { if (mounted) setState(() {}); }
+
+  @override
+  void initState() {
+    super.initState();
+    _src.addListener(_changed);
+    AdminStats.I.addListener(_changed);
+    _src.load();
+    AdminStats.I.load();
+  }
+
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    AdminStats.I.removeListener(_changed);
+    super.dispose();
+  }
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -133,10 +69,11 @@ class _PremiumUsersViewState extends State<PremiumUsersView> {
   }
 
   Widget _buildTopKpiCarousel() {
+    final st = AdminStats.I;
     final kpis = [
-      {'title': 'Total Premium', 'val': '4,320', 'growth': '18.4% vs last month', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFEF3C7)},
-      {'title': 'Monthly MRR', 'val': '₹12,45,800', 'growth': '+21.7% growth', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Renewal Rate', 'val': '88.6%', 'growth': 'High retention', 'icon': Icons.autorenew_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Total Premium', 'val': fmtInt(st.n('users','premium')), 'growth': '${fmtPct(st.n('users','conversion'))} of all users', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFEF3C7)},
+      {'title': 'Coaching Revenue', 'val': fmtInr(st.n('trainers','sub_revenue')), 'growth': '${fmtInt(st.n('trainers','active_subs'))} active plans', 'icon': Icons.monetization_on_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Premium Users', 'val': fmtInt(AdminUsers.of('premium').rows.length), 'growth': 'Paid or coached', 'icon': Icons.autorenew_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
     ];
 
     return SingleChildScrollView(
@@ -311,7 +248,7 @@ class _PremiumUsersViewState extends State<PremiumUsersView> {
                 ),
                 padding: const EdgeInsets.all(2),
                 child: ClipOval(
-                  child: Image.asset(
+                  child: NetOrAssetImage(
                     u['img'] as String,
                     fit: BoxFit.cover,
                     errorBuilder: (c, e, s) => const Icon(Icons.person, size: 24, color: Color(0xFF64748B)),
