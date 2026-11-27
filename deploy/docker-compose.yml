@@ -1,14 +1,16 @@
 # NeuroFit API on your own server (Hostinger VPS) at https://api.bitechez.com
-#   api       NeuroFit API + live updates (socket.io)   -> ../server/Dockerfile
-#   postgres  database (PostgreSQL 16, data kept in a Docker volume)
-#   valkey    cache (Valkey 8, the free open-source Redis)
-#   caddy     HTTPS, only when this server has no BiteChez Caddy already (profile "standalone")
+#   neurofit-api    NeuroFit API + live updates (socket.io)   -> ../server/Dockerfile
+#   neurofit-db     database (PostgreSQL 16, data kept in a Docker volume)
+#   neurofit-cache  cache (Valkey 8, the free open-source Redis)
+#   caddy           HTTPS, only when this server has no BiteChez Caddy already (profile "standalone")
+# Service names start with "neurofit-" on purpose: the API also joins the BiteChez network, where
+# plain names like "api", "postgres" and "valkey" already belong to BiteChez.
 # Secrets live in deploy/.env (made by deploy/install.sh). Never commit that file.
 
 name: neurofit
 
 services:
-  api:
+  neurofit-api:
     build: ../server
     image: neurofit-api:latest
     init: true
@@ -17,20 +19,19 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      DATABASE_URL: postgres://neurofit:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/neurofit
-      REDIS_URL: redis://:${VALKEY_PASSWORD:?Set VALKEY_PASSWORD in .env}@valkey:6379
+      DATABASE_URL: postgres://neurofit:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@neurofit-db:5432/neurofit
+      REDIS_URL: redis://:${VALKEY_PASSWORD:?Set VALKEY_PASSWORD in .env}@neurofit-cache:6379
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
     depends_on:
-      postgres:
+      neurofit-db:
         condition: service_healthy
-      valkey:
+      neurofit-cache:
         condition: service_healthy
     networks:
       default:
       edge:
-        aliases: [neurofit-api]
 
-  postgres:
+  neurofit-db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -46,7 +47,7 @@ services:
       timeout: 5s
       retries: 20
 
-  valkey:
+  neurofit-cache:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
     command: ['valkey-server', '--requirepass', '${VALKEY_PASSWORD}', '--maxmemory', '128mb', '--maxmemory-policy', 'allkeys-lru', '--save', '']
@@ -69,7 +70,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    depends_on: [api]
+    depends_on: [neurofit-api]
 
 networks:
   # The BiteChez stack's network when it runs on the same server, so its Caddy can reach "neurofit-api".

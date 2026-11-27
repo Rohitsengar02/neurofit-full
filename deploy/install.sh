@@ -95,11 +95,11 @@ fi
 
 echo "==> Waiting for the API"
 for _ in $(seq 1 40); do
-  if docker compose exec -T api wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1; then
+  if docker compose exec -T neurofit-api wget -qO- http://127.0.0.1:5000/api/health >/dev/null 2>&1; then
     echo "    API is up. Check https://$API_DOMAIN/api/health in a browser (DNS: A record 'api' -> this server's IP)."
     exit 0
   fi
   sleep 3
 done
-echo "    !! API did not come up. See: docker compose logs api"
+echo "    !! API did not come up. See: docker compose logs neurofit-api"
 exit 1

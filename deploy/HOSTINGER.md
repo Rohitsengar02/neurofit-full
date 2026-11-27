@@ -34,11 +34,11 @@ Change a key: edit `deploy/.env`, then `docker compose up -d`.
 ## Moving the data from Render (optional)
 ```bash
 pg_dump "<Render external DATABASE_URL>" --clean --if-exists --no-owner --no-acl > neurofit.sql
-docker compose exec -T postgres psql -U neurofit -d neurofit < neurofit.sql
+docker compose exec -T neurofit-db psql -U neurofit -d neurofit < neurofit.sql
 ```
 Run this right after the first start, before anyone signs up on the new server.
 
 ## Backups (daily, keeps 7)
 ```bash
-(crontab -l; echo '0 3 * * * cd /root/neurofit-full/deploy && docker compose exec -T postgres pg_dump -U neurofit neurofit | gzip > /root/neurofit-$(date +\%a).sql.gz') | crontab -
+(crontab -l; echo '0 3 * * * cd /root/neurofit-full/deploy && docker compose exec -T neurofit-db pg_dump -U neurofit neurofit | gzip > /root/neurofit-$(date +\%a).sql.gz') | crontab -
 ```

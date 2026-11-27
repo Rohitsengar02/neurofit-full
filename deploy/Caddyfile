@@ -1,5 +1,5 @@
 # Only used when NeuroFit has the server to itself (docker compose --profile standalone).
 {$API_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy api:5000
+	reverse_proxy neurofit-api:5000
 }
