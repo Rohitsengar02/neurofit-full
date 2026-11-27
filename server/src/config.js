@@ -1,5 +1,6 @@
 // All settings come from environment variables (Render → Environment).
-const env = process.env;
+// Values are trimmed: a stray space pasted into a dashboard breaks keys and URLs.
+const env = Object.fromEntries(Object.entries(process.env).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]));
 
 const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
 

@@ -80,6 +80,7 @@ app.use('/api', (req, res) => res.status(404).json({ success: false, message: `N
 app.use((err, req, res, _next) => {
   if (err.type === 'entity.too.large') return res.status(413).json({ success: false, message: 'Request is too large' });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ success: false, message: 'Invalid JSON' });
+  if (err.status && err.status < 600 && err.status >= 400 && err.status !== 500) return res.status(err.status).json({ success: false, message: err.message });
   console.error(`[error] ${req.method} ${req.originalUrl.split('?')[0]}:`, err.message);
   res.status(500).json({ success: false, message: 'Something went wrong on our side. Please try again.' });
 });

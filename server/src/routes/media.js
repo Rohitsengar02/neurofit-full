@@ -14,12 +14,48 @@ const cache = require('../lib/cache');
 
 const router = express.Router();
 const r2 = config.r2;
-const configured = () => !!((r2.endpoint || r2.accountId) && r2.accessKeyId && r2.secretAccessKey && r2.bucket);
+const configured = () => !!((r2.endpoint || r2.accountId) && r2.accessKeyId && (r2.secretAccessKey || r2.accessKeyId.startsWith('cfat_')) && r2.bucket);
 let client = null;
-const s3 = () => client || (client = new S3Client({
-  region: 'auto', endpoint: r2.endpoint || `https://${r2.accountId}.r2.cloudflarestorage.com`,
-  credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
-}));
+let resolving = null;
+
+// R2 takes either an S3 key pair or a Cloudflare API token (cfat_..., as BiteChez uses). For a token,
+// the access key id is the token's id (looked up once from Cloudflare) and the secret is its SHA-256.
+async function resolveKeys() {
+  let { accessKeyId, secretAccessKey } = r2;
+  if (accessKeyId.startsWith('cfat_') || accessKeyId.length !== 32) {
+    const token = accessKeyId;
+    const urls = [
+      ...(r2.accountId ? [`https://api.cloudflare.com/client/v4/accounts/${r2.accountId}/tokens/verify`] : []),
+      'https://api.cloudflare.com/client/v4/user/tokens/verify',
+    ];
+    for (const url of urls) {
+      try {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+        const j = await r.json().catch(() => ({}));
+        if (j.success && j.result && j.result.id) { accessKeyId = j.result.id; break; }
+      } catch (_) { /* try the next one */ }
+    }
+    if (accessKeyId === token) throw new Error('R2 token could not be checked with Cloudflare');
+    if (!secretAccessKey) secretAccessKey = crypto.createHash('sha256').update(token).digest('hex');
+  }
+  return new S3Client({
+    region: 'auto', endpoint: r2.endpoint || `https://${r2.accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
+
+async function s3() {
+  if (client) return client;
+  resolving = resolving || resolveKeys();
+  try {
+    client = await resolving;
+    return client;
+  } catch (e) {
+    resolving = null; // try again on the next request
+    console.error('[r2]', e.message);
+    throw Object.assign(new Error('Image storage could not connect to Cloudflare R2.'), { status: 503 });
+  }
+}
 
 const ALLOWED = /^(image\/(jpeg|png|webp|gif|heic|heif|avif)|video\/(mp4|quicktime|webm))$/;
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif', 'image/avif': 'avif', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
@@ -41,7 +77,7 @@ router.post('/presign', requireAuth, async (req, res) => {
   const contentType = String(req.body.contentType || req.body.mimeType || 'image/jpeg').toLowerCase();
   if (!ALLOWED.test(contentType)) return res.status(400).json({ success: false, message: 'Only images and short videos can be uploaded.' });
   const key = keyFor(req, req.body.folder, contentType, req.body.fileName);
-  const uploadUrl = await getSignedUrl(s3(), new PutObjectCommand({ Bucket: r2.bucket, Key: key, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }), { expiresIn: 600 });
+  const uploadUrl = await getSignedUrl(await s3(), new PutObjectCommand({ Bucket: r2.bucket, Key: key, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }), { expiresIn: 600 });
   res.json({ success: true, uploadUrl, method: 'PUT', headers: { 'Content-Type': contentType }, key, url: publicUrl(key) });
 });
 
@@ -54,7 +90,7 @@ router.post('/upload', requireAuth, express.json({ limit: '25mb' }), async (req,
   const body = Buffer.from(b64, 'base64');
   if (!isAdmin(req) && body.length > 8 * 1024 * 1024) return res.status(413).json({ success: false, message: 'File is larger than 8 MB' });
   const key = keyFor(req, req.body.folder || 'media', contentType, req.body.fileName);
-  await s3().send(new PutObjectCommand({ Bucket: r2.bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }));
+  await (await s3()).send(new PutObjectCommand({ Bucket: r2.bucket, Key: key, Body: body, ContentType: contentType, CacheControl: 'public, max-age=31536000, immutable' }));
   await cache.bump('media');
   const url = publicUrl(key);
   res.json({ success: true, url, imageUrl: url, key, fileName: req.body.fileName || key.split('/').pop(), data: { url, key } });
@@ -62,7 +98,7 @@ router.post('/upload', requireAuth, express.json({ limit: '25mb' }), async (req,
 
 router.get('/', requireAdmin, cache.cached(['media'], 60), async (req, res) => {
   if (!configured()) return res.json({ success: true, count: 0, data: [], items: [], message: 'R2 not configured' });
-  const out = await s3().send(new ListObjectsV2Command({ Bucket: r2.bucket, Prefix: req.query.prefix || undefined, MaxKeys: Math.min(Number(req.query.limit) || 500, 1000), ContinuationToken: req.query.cursor || undefined }));
+  const out = await (await s3()).send(new ListObjectsV2Command({ Bucket: r2.bucket, Prefix: req.query.prefix || undefined, MaxKeys: Math.min(Number(req.query.limit) || 500, 1000), ContinuationToken: req.query.cursor || undefined }));
   const items = (out.Contents || []).sort((a, b) => b.LastModified - a.LastModified).map((o) => ({ key: o.Key, url: publicUrl(o.Key), size: o.Size, lastModified: o.LastModified }));
   res.json({ success: true, count: items.length, data: items.map((i) => i.url), items, next: out.NextContinuationToken || null });
 });
@@ -72,7 +108,7 @@ router.delete('/', requireAdmin, async (req, res) => {
   let key = String(req.query.key || req.body.key || '');
   if (!key && req.body.url && r2.publicUrl) key = String(req.body.url).replace(`${r2.publicUrl}/`, '');
   if (!key) return res.status(400).json({ success: false, message: 'key required' });
-  await s3().send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: key }));
+  await (await s3()).send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: key }));
   await cache.bump('media');
   res.json({ success: true });
 });
@@ -81,7 +117,7 @@ router.delete('/', requireAdmin, async (req, res) => {
 router.get('/file/*', async (req, res) => {
   if (!configured()) return notConfigured(res);
   try {
-    const obj = await s3().send(new GetObjectCommand({ Bucket: r2.bucket, Key: decodeURIComponent(req.params[0]) }));
+    const obj = await (await s3()).send(new GetObjectCommand({ Bucket: r2.bucket, Key: decodeURIComponent(req.params[0]) }));
     res.setHeader('Content-Type', obj.ContentType || 'application/octet-stream');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     obj.Body.pipe(res);
