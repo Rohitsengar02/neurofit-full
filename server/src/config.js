@@ -19,8 +19,9 @@ module.exports = {
     accountId: env.R2_ACCOUNT_ID || '',
     accessKeyId: env.R2_ACCESS_KEY_ID || '',
     secretAccessKey: env.R2_SECRET_ACCESS_KEY || '',
-    bucket: env.R2_BUCKET || '',
-    publicUrl: (env.R2_PUBLIC_URL || '').replace(/\/+$/, ''),
+    bucket: env.R2_BUCKET || env.R2_BUCKET_NAME || '',
+    publicUrl: (env.R2_PUBLIC_URL || env.R2_PUBLIC_DOMAIN || '').replace(/\/+$/, ''),
+    endpoint: (env.R2_ENDPOINT || '').replace(/\/+$/, ''),
   },
   livekit: {
     url: env.LIVEKIT_URL || '',

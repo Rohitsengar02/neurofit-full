@@ -1,0 +1,6 @@
+
+# NeuroFit API (added by neurofit-full/deploy/install.sh)
+api.bitechez.com {
+	encode zstd gzip
+	reverse_proxy neurofit-api:5000
+}
