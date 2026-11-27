@@ -116,6 +116,8 @@ class WorkoutBannersBackendService extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   void _initSocket() {
+    // Demo build: no live server to listen to.
+    if (ApiConstants.demoMode) return;
     try {
       final socketUri = ApiConstants.socketUrl;
       _socket = IO.io(

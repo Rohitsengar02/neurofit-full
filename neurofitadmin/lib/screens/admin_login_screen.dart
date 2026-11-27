@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_constants.dart';
+import '../backend/live_backend.dart';
 import 'admin_dashboard_screen.dart';
 
 class AdminLoginScreen extends StatefulWidget {
@@ -27,10 +29,18 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     super.dispose();
   }
 
-  void _autoFillAdminCredentials() {
+  void _autoFillAdminCredentials() async {
     HapticFeedback.mediumImpact();
-    _emailController.text = 'rohitsengar02@gmail.com';
-    _passwordController.text = 'RUdra@602';
+    if (ApiConstants.demoMode) {
+      _emailController.text = ApiConstants.demoAdminEmail;
+      _passwordController.text = ApiConstants.demoAdminPassword;
+    } else {
+      // Live build: fill the last admin email used on this device.
+      final last = await AdminSession.lastEmail();
+      if (last.isEmpty) return;
+      _emailController.text = last;
+    }
+    if (!mounted) return;
     setState(() {
       _errorMessage = null;
     });
@@ -42,7 +52,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             const Icon(Icons.bolt_rounded, color: Color(0xFF22C55E), size: 20),
             const SizedBox(width: 10),
             Text(
-              'SuperAdmin credentials autofilled!',
+              ApiConstants.demoMode ? 'Demo admin credentials filled in' : 'Last admin email filled in',
               style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
             ),
           ],
@@ -54,31 +64,30 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<bool> _verifyAdminWithBackend(String email, String password) async {
-    final urls = [
-      '${ApiConstants.apiBaseUrl}/admin/login',
-      ...ApiConstants.candidateBaseUrls.map((b) => '$b/api/admin/login'),
-    ];
-
-    for (final url in urls) {
-      try {
-        final res = await http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'email': email.trim(), 'password': password}),
-        ).timeout(const Duration(seconds: 3));
-
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          if (data['success'] == true) {
-            debugPrint('✅ Admin verified successfully with MongoDB Atlas admins collection!');
-            return true;
-          }
-        }
-      } catch (_) {}
+    if (ApiConstants.demoMode) {
+      // Demo build: no backend or database. Only the demo admin can sign in.
+      return email.trim().toLowerCase() == ApiConstants.demoAdminEmail &&
+          password == ApiConstants.demoAdminPassword;
     }
 
-    // Direct match against seeded admin credentials
-    return (email.trim().toLowerCase() == 'rohitsengar02@gmail.com' && password == 'RUdra@602');
+    try {
+      // Generous timeout: a sleeping free server needs up to ~50 s to wake.
+      final res = await http.post(
+        Uri.parse('${ApiConstants.apiBaseUrl}/admin/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email.trim(), 'password': password}),
+      ).timeout(const Duration(seconds: 75));
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200 && data is Map && data['success'] == true) {
+        await AdminSession.save(Map<String, dynamic>.from(data));
+        return true;
+      }
+    } on TimeoutException {
+      throw 'The server is waking up. Please try again in a few seconds.';
+    } catch (e) {
+      if (e is String) rethrow;
+    }
+    return false;
   }
 
   Future<void> _handleLogin() async {
@@ -121,7 +130,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Connection error: $e';
+        _errorMessage = e is String ? e : 'Could not reach the server. Check your connection and try again.';
       });
     } finally {
       if (mounted) {
@@ -197,7 +206,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'MongoDB Atlas Enterprise Command Center',
+                          ApiConstants.demoMode
+                              ? 'Demo mode · sample data, nothing is saved'
+                              : 'MongoDB Atlas Enterprise Command Center',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -334,7 +345,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                           const Icon(Icons.bolt_rounded, color: Color(0xFF22C55E), size: 18),
                           const SizedBox(width: 8),
                           Text(
-                            '⚡ AUTOFILL ADMIN CREDENTIALS',
+                            'USE DEMO ADMIN LOGIN',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               fontWeight: FontWeight.w800,

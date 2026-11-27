@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../backend/admin_data.dart';
+import '../backend/live_backend.dart';
+
 class AdminProfileBottomSheet extends StatefulWidget {
   const AdminProfileBottomSheet({super.key});
 
@@ -7,7 +10,7 @@ class AdminProfileBottomSheet extends StatefulWidget {
   State<AdminProfileBottomSheet> createState() => _AdminProfileBottomSheetState();
 }
 
-class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> {
+class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> with LiveStats {
   bool _biometricsEnabled = true;
   bool _realTimeAlerts = true;
   bool _autoBackups = true;
@@ -98,9 +101,9 @@ class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> {
                           children: [
                             Row(
                               children: [
-                                const Text(
-                                  'Rohit Singhania',
-                                  style: TextStyle(
+                                Text(
+                                  AdminSession.name.isNotEmpty ? AdminSession.name : 'Admin',
+                                  style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
                                     color: Colors.white,
@@ -113,8 +116,8 @@ class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> {
                                     color: const Color(0xFF10B981),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Text(
-                                    'MASTER',
+                                  child: Text(
+                                    AdminSession.role == 'superadmin' ? 'MASTER' : 'ADMIN',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 8,
@@ -131,12 +134,12 @@ class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> {
                             ),
                             const SizedBox(height: 4),
                             Row(
-                              children: const [
-                                Icon(Icons.email_outlined, size: 11, color: Color(0xFF6366F1)),
-                                SizedBox(width: 4),
+                              children: [
+                                const Icon(Icons.email_outlined, size: 11, color: Color(0xFF6366F1)),
+                                const SizedBox(width: 4),
                                 Text(
-                                  'admin@neurofit.app',
-                                  style: TextStyle(fontSize: 10, color: Color(0xFFCBD5E1), fontWeight: FontWeight.w700),
+                                  AdminSession.email,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFFCBD5E1), fontWeight: FontWeight.w700),
                                 ),
                               ],
                             ),
@@ -158,11 +161,11 @@ class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> {
                   ),
                   child: Row(
                     children: [
-                      Expanded(child: _buildProfileStat('Actions Taken', '1,420', const Color(0xFF6366F1))),
+                      Expanded(child: _buildProfileStat('Actions Taken', fmtInt(st.n('trainers', 'approved') + st.n('orders', 'delivered') + st.n('orders', 'cancelled') + st.n('users', 'total') - st.n('users', 'unverified')), const Color(0xFF6366F1))),
                       Container(width: 1, height: 26, color: const Color(0xFFCBD5E1)),
-                      Expanded(child: _buildProfileStat('Approvals', '348', const Color(0xFF10B981))),
+                      Expanded(child: _buildProfileStat('Approvals', fmtInt(st.n('trainers', 'approved') + st.n('users', 'total') - st.n('users', 'unverified')), const Color(0xFF10B981))),
                       Container(width: 1, height: 26, color: const Color(0xFFCBD5E1)),
-                      Expanded(child: _buildProfileStat('Security Level', 'Level 5 HQ', const Color(0xFFF59E0B))),
+                      Expanded(child: _buildProfileStat('Security Level', AdminSession.role == 'superadmin' ? 'Level 5 HQ' : 'Level 4 Admin', const Color(0xFFF59E0B))),
                     ],
                   ),
                 ),
@@ -248,9 +251,12 @@ class _AdminProfileBottomSheetState extends State<AdminProfileBottomSheet> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 0,
                     ),
-                    onPressed: () {
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      await AdminSession.clear();
+                      AdminSession.onSignedOut?.call();
+                      messenger.showSnackBar(
                         const SnackBar(content: Text('Securely signed out of Admin Console.'), backgroundColor: Color(0xFF0F172A)),
                       );
                     },

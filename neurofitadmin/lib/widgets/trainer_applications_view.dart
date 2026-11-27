@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
 
 class TrainerApplicationsView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,66 +21,30 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
   int _selectedFilter = 0; // 0=All, 1=Pending, 2=Approved, 3=Rejected
   String _searchQuery = '';
 
-  late List<Map<String, dynamic>> _applicationsList;
+  List<Map<String, dynamic>> get _applicationsList => AdminTrainers.I.rows;
+
+  void _changed() { if (mounted) setState(() {}); }
 
   @override
   void initState() {
     super.initState();
+    AdminTrainers.I.addListener(_changed);
+    AdminTrainers.I.load(force: true);
+  }
 
-    _applicationsList = [
-      {
-        'id': 'APP-901',
-        'name': 'Kavita Sharma',
-        'email': 'kavita.coach@gmail.com',
-        'phone': '+91 98765 43210',
-        'experience': '6 Years Personal Training',
-        'specialty': 'Female Strength & Glutes',
-        'cert': 'ACE CPT + Pre/Postnatal Certified',
-        'appliedDate': 'Today, 11:30 AM',
-        'status': 'Pending Review',
-        'statusColor': const Color(0xFFF59E0B),
-        'avatar': 'assets/images/trainers_hero_banner.jpg',
-      },
-      {
-        'id': 'APP-902',
-        'name': 'Arjun Dasgupta',
-        'email': 'arjun.d@gmail.com',
-        'phone': '+91 91234 56789',
-        'experience': '8 Years Powerlifting Coach',
-        'specialty': 'Heavy Compounds & Barbell Mechanics',
-        'cert': 'CSCS + USAPL Senior Coach',
-        'appliedDate': 'Today, 9:15 AM',
-        'status': 'Pending Review',
-        'statusColor': const Color(0xFFF59E0B),
-        'avatar': 'assets/images/athlete_transform_1787825621309.jpg',
-      },
-      {
-        'id': 'APP-903',
-        'name': 'Shreya Malhotra',
-        'email': 'shreya.m@gmail.com',
-        'phone': '+91 87654 32109',
-        'experience': '4 Years Functional Movement',
-        'specialty': 'Yoga & Calisthenics',
-        'cert': 'Yoga Alliance RYT-500',
-        'appliedDate': 'Yesterday, 4:20 PM',
-        'status': 'Approved',
-        'statusColor': const Color(0xFF10B981),
-        'avatar': 'assets/images/hero_banner_1.png',
-      },
-      {
-        'id': 'APP-904',
-        'name': 'Rohan Kapoor',
-        'email': 'rohan.k@gmail.com',
-        'phone': '+91 76543 21098',
-        'experience': '1 Year Gym Floor Trainer',
-        'specialty': 'General Fitness',
-        'cert': 'Unverified Certificate',
-        'appliedDate': 'May 25, 2025',
-        'status': 'Rejected',
-        'statusColor': const Color(0xFFEF4444),
-        'avatar': 'assets/images/hero_banner_4.png',
-      },
-    ];
+  @override
+  void dispose() {
+    AdminTrainers.I.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _approve(Map<String, dynamic> app) async {
+    try {
+      await AdminTrainers.I.setStatus('${app['id']}', 'approve');
+      if (mounted) _showSnackbar('${app['name']} approved as verified coach!', const Color(0xFF10B981));
+    } catch (e) {
+      if (mounted) _showSnackbar('Could not approve: $e', const Color(0xFFEF4444));
+    }
   }
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -137,12 +102,24 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          if (app['rawStatus'] != 'rejected')
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await AdminTrainers.I.setStatus('${app['id']}', 'reject');
+                  if (mounted) _showSnackbar('${app['name']} rejected', const Color(0xFFEF4444));
+                } catch (e) {
+                  if (mounted) _showSnackbar('Could not reject: $e', const Color(0xFFEF4444));
+                }
+              },
+              child: const Text('Reject', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w800)),
+            ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
-              setState(() => app['status'] = 'Approved');
-              _showSnackbar('${app['name']} approved as verified coach!', const Color(0xFF10B981));
+              _approve(app);
             },
             child: const Text('Approve Application', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
@@ -166,11 +143,20 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
   }
 
   Widget _buildKpiCarousel() {
+    final all = _applicationsList;
+    int count(String s) => all.where((a) => a['rawStatus'] == s).length;
+    final week = all.where((a) => a['rawStatus'] == 'approved' && (DateTime.tryParse('${a['reviewedAt'] ?? ''}')?.isAfter(DateTime.now().subtract(const Duration(days: 7))) ?? false)).length;
+    final waits = [
+      for (final a in all)
+        if (a['reviewedAt'] != null && a['appliedAt'] != null)
+          DateTime.parse('${a['reviewedAt']}').difference(DateTime.parse('${a['appliedAt']}')).inMinutes / 60
+    ];
+    final avgWait = waits.isEmpty ? '-' : '${(waits.reduce((a, b) => a + b) / waits.length).toStringAsFixed(1)} hrs';
     final kpis = [
-      {'title': 'Pending Queue', 'val': '14 Apps', 'growth': 'Requires review', 'icon': Icons.pending_actions_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Approved (7D)', 'val': '28 Coaches', 'growth': '92% Onboarded', 'icon': Icons.check_circle_outline_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Rejected / Resubmit', 'val': '4 Apps', 'growth': 'Unverified certs', 'icon': Icons.highlight_off_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
-      {'title': 'Avg Turnaround', 'val': '6.4 hrs', 'growth': 'Fast verification', 'icon': Icons.speed_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
+      {'title': 'Pending Queue', 'val': '${count('pending')} Apps', 'growth': 'Requires review', 'icon': Icons.pending_actions_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Approved (7D)', 'val': '$week Coaches', 'growth': '${count('approved')} approved in total', 'icon': Icons.check_circle_outline_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Rejected / Resubmit', 'val': '${count('rejected')} Apps', 'growth': '${count('suspended')} suspended', 'icon': Icons.highlight_off_rounded, 'color': const Color(0xFFEF4444), 'bg': const Color(0xFFFEF2F2)},
+      {'title': 'Avg Turnaround', 'val': avgWait, 'growth': 'Applied to reviewed', 'icon': Icons.speed_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
     ];
 
     return SingleChildScrollView(
@@ -212,7 +198,9 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
   }
 
   Widget _buildSearchAndFilterTabs() {
-    final tabs = ['All (46)', 'Pending (14)', 'Approved (28)', 'Rejected (4)'];
+    final all = _applicationsList;
+    int count(String s) => all.where((a) => a['rawStatus'] == s).length;
+    final tabs = ['All (${all.length})', 'Pending (${count('pending')})', 'Approved (${count('approved')})', 'Rejected (${count('rejected')})'];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,9 +257,9 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
 
   Widget _buildApplicationsList() {
     final filtered = _applicationsList.where((app) {
-      if (_selectedFilter == 1 && !app['status'].toString().contains('Pending')) return false;
-      if (_selectedFilter == 2 && !app['status'].toString().contains('Approved')) return false;
-      if (_selectedFilter == 3 && !app['status'].toString().contains('Rejected')) return false;
+      if (_selectedFilter == 1 && app['rawStatus'] != 'pending') return false;
+      if (_selectedFilter == 2 && app['rawStatus'] != 'approved') return false;
+      if (_selectedFilter == 3 && app['rawStatus'] != 'rejected') return false;
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase();
       return (app['name'] as String).toLowerCase().contains(q) ||
@@ -285,7 +273,7 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
       itemCount: filtered.length,
       itemBuilder: (ctx, i) {
         final app = filtered[i];
-        final isPending = app['status'] == 'Pending Review';
+        final isPending = app['rawStatus'] == 'pending';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -302,7 +290,7 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(radius: 22, backgroundImage: AssetImage(app['avatar'] as String)),
+                  CircleAvatar(radius: 22, backgroundColor: const Color(0xFFE2E8F0), backgroundImage: '${app['avatar']}'.startsWith('http') ? NetworkImage(app['avatar'] as String) : null, child: '${app['avatar']}'.startsWith('http') ? null : const Icon(Icons.person, size: 22, color: Color(0xFF64748B))),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -317,7 +305,7 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(color: (app['statusColor'] as Color).withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
-                    child: Text(app['status'] as String, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: app['statusColor'] as Color)),
+                    child: Text(app['appStatus'] as String, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: app['statusColor'] as Color)),
                   ),
                 ],
               ),
@@ -340,8 +328,7 @@ class _TrainerApplicationsViewState extends State<TrainerApplicationsView> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () {
-                          setState(() => app['status'] = 'Approved');
-                          _showSnackbar('${app['name']} approved!', const Color(0xFF10B981));
+                          _approve(app);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 8),

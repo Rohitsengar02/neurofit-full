@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'user_detail_bottom_sheet.dart';
+import 'net_or_asset_image.dart';
+import '../backend/admin_data.dart';
 
 class NewUsersView extends StatefulWidget {
   final String selectedDateRange;
@@ -20,92 +22,26 @@ class NewUsersView extends StatefulWidget {
 class _NewUsersViewState extends State<NewUsersView> {
   String _searchQuery = '';
 
-  final List<Map<String, dynamic>> _newUsersList = const [
-    {
-      'name': 'Rahul Verma',
-      'email': 'rahulverma@gmail.com',
-      'phone': '+91 98765 43210',
-      'joined': 'May 26, 2025',
-      'source': 'Mobile App',
-      'sourceIcon': Icons.phone_android_rounded,
-      'plan': 'Free Plan',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'badge': 'New',
-      'avatarBg': Color(0xFFE2E8F0),
-      'img': 'assets/images/trainers_hero_banner.jpg',
-    },
-    {
-      'name': 'Priya Patel',
-      'email': 'priya.patel@gmail.com',
-      'phone': '+91 91234 56789',
-      'joined': 'May 26, 2025',
-      'source': 'Website',
-      'sourceIcon': Icons.language_rounded,
-      'plan': 'Free Plan',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'badge': 'New',
-      'avatarBg': Color(0xFFEDE9FE),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-    },
-    {
-      'name': 'Neha Singh',
-      'email': 'neha.singh@gmail.com',
-      'phone': '+91 87654 32109',
-      'joined': 'May 25, 2025',
-      'source': 'Apple',
-      'sourceIcon': Icons.apple_rounded,
-      'plan': 'Free Plan',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'badge': 'New',
-      'avatarBg': Color(0xFFFFEDD5),
-      'img': 'assets/images/hero_banner_1.png',
-    },
-    {
-      'name': 'Karan Mehta',
-      'email': 'karanmehta@gmail.com',
-      'phone': '+91 76543 21098',
-      'joined': 'May 25, 2025',
-      'source': 'Facebook',
-      'sourceIcon': Icons.facebook_rounded,
-      'plan': 'Premium Plan',
-      'planColor': Color(0xFF8B5CF6),
-      'planBg': Color(0xFFF5F3FF),
-      'badge': 'New',
-      'avatarBg': Color(0xFFDCFCE7),
-      'img': 'assets/images/hero_banner_4.png',
-    },
-    {
-      'name': 'Vikram Joshi',
-      'email': 'vikram.joshi@gmail.com',
-      'phone': '+91 84321 09876',
-      'joined': 'May 24, 2025',
-      'source': 'Google',
-      'sourceIcon': Icons.search_rounded,
-      'plan': 'Free Plan',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'badge': 'New',
-      'avatarBg': Color(0xFFDBEAFE),
-      'img': 'assets/images/workout_banner_1.png',
-    },
-    {
-      'name': 'Pooja Mehta',
-      'email': 'pooja.mehta@gmail.com',
-      'phone': '+91 73456 78901',
-      'joined': 'May 24, 2025',
-      'source': 'Instagram',
-      'sourceIcon': Icons.camera_alt_rounded,
-      'plan': 'Free Plan',
-      'planColor': Color(0xFF10B981),
-      'planBg': Color(0xFFECFDF5),
-      'badge': 'New',
-      'avatarBg': Color(0xFFFEF3C7),
-      'img': 'assets/images/athlete_transform_1787825621309.jpg',
-    },
-  ];
+  AdminUsers get _src => AdminUsers.of('new');
+  List<Map<String, dynamic>> get _newUsersList => _src.rows;
+
+  void _changed() { if (mounted) setState(() {}); }
+
+  @override
+  void initState() {
+    super.initState();
+    _src.addListener(_changed);
+    AdminStats.I.addListener(_changed);
+    _src.load();
+    AdminStats.I.load();
+  }
+
+  @override
+  void dispose() {
+    _src.removeListener(_changed);
+    AdminStats.I.removeListener(_changed);
+    super.dispose();
+  }
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < widget.fadeAnimations.length ? index : widget.fadeAnimations.length - 1;
@@ -133,10 +69,11 @@ class _NewUsersViewState extends State<NewUsersView> {
   }
 
   Widget _buildTopKpiCarousel() {
+    final st = AdminStats.I;
     final kpis = [
-      {'title': 'Total Users', 'val': '12,856', 'growth': '16.3% vs last 7 days', 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'New This Week', 'val': '986', 'growth': '14.2% vs last week', 'icon': Icons.calendar_today_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'New This Month', 'val': '3,546', 'growth': '18.9% vs last month', 'icon': Icons.person_add_alt_1_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Users', 'val': fmtInt(st.n('users','total')), 'growth': st.growthLabel('signups'), 'icon': Icons.groups_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'New This Week', 'val': fmtInt(st.n('users','new_7d')), 'growth': '${fmtInt(st.n('users','new_today'))} joined today', 'icon': Icons.calendar_today_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'New This Month', 'val': fmtInt(st.n('users','new_30d')), 'growth': '${fmtInt(st.n('users','google'))} via Google', 'icon': Icons.person_add_alt_1_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return SingleChildScrollView(
@@ -314,7 +251,7 @@ class _NewUsersViewState extends State<NewUsersView> {
                 ),
                 padding: const EdgeInsets.all(2),
                 child: ClipOval(
-                  child: Image.asset(
+                  child: NetOrAssetImage(
                     u['img'] as String,
                     fit: BoxFit.cover,
                     errorBuilder: (c, e, s) => const Icon(Icons.person, size: 24, color: Color(0xFF64748B)),

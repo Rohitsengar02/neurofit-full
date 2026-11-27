@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-class ReportsOverviewView extends StatelessWidget {
+class ReportsOverviewView extends StatefulWidget {
   final String selectedDateRange;
   final List<Animation<double>> fadeAnimations;
   final List<Animation<Offset>> slideAnimations;
@@ -12,6 +13,15 @@ class ReportsOverviewView extends StatelessWidget {
     required this.fadeAnimations,
     required this.slideAnimations,
   });
+
+  @override
+  State<ReportsOverviewView> createState() => _ReportsOverviewViewState();
+}
+
+class _ReportsOverviewViewState extends State<ReportsOverviewView> with LiveStats {
+  String get selectedDateRange => widget.selectedDateRange;
+  List<Animation<double>> get fadeAnimations => widget.fadeAnimations;
+  List<Animation<Offset>> get slideAnimations => widget.slideAnimations;
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < fadeAnimations.length ? index : fadeAnimations.length - 1;
@@ -348,12 +358,14 @@ class ReportsOverviewView extends StatelessWidget {
   }
 
   // 4. POPULAR REPORTS
+  String _g(String key) => '${st.growthUp(key) ? '+' : '-'}${st.growth(key).abs().toStringAsFixed(1)}%';
+
   Widget _buildPopularReportsSection() {
     final popular = [
-      {'title': 'User Growth Report', 'desc': 'Detailed user growth and registration trends', 'metric': '2,85,689', 'label': 'Total Users', 'growth': '+18.6%', 'color': const Color(0xFF10B981), 'icon': Icons.people_outline_rounded},
-      {'title': 'Revenue Summary Report', 'desc': 'Revenue summary and financial insights', 'metric': '₹24,58,300', 'label': 'Total Revenue', 'growth': '+21.7%', 'color': const Color(0xFF8B5CF6), 'icon': Icons.account_balance_wallet_rounded},
-      {'title': 'Workout Performance Report', 'desc': 'Workout completions, types and performance', 'metric': '18,456', 'label': 'Completed Workouts', 'growth': '+16.2%', 'color': const Color(0xFF3B82F6), 'icon': Icons.fitness_center_rounded},
-      {'title': 'Order & Sales Report', 'desc': 'Orders, sales overview and product insights', 'metric': '1,243', 'label': 'Total Orders', 'growth': '+14.3%', 'color': const Color(0xFFF97316), 'icon': Icons.shopping_bag_rounded},
+      {'title': 'User Growth Report', 'desc': 'Detailed user growth and registration trends', 'metric': fmtInt(st.n('users', 'total')), 'label': 'Total Users', 'growth': _g('signups'), 'key': 'signups', 'color': const Color(0xFF10B981), 'icon': Icons.people_outline_rounded},
+      {'title': 'Revenue Summary Report', 'desc': 'Revenue summary and financial insights', 'metric': fmtInr(ins.n('revenue', 'total') == 0 ? st.n('orders', 'revenue') : ins.n('revenue', 'total')), 'label': 'Total Revenue', 'growth': _g('revenue'), 'key': 'revenue', 'color': const Color(0xFF8B5CF6), 'icon': Icons.account_balance_wallet_rounded},
+      {'title': 'Workout Performance Report', 'desc': 'Workout completions, types and performance', 'metric': fmtInt(st.n('fitness', 'completed')), 'label': 'Completed Workouts', 'growth': _g('workoutsDone'), 'key': 'workoutsDone', 'color': const Color(0xFF3B82F6), 'icon': Icons.fitness_center_rounded},
+      {'title': 'Order & Sales Report', 'desc': 'Orders, sales overview and product insights', 'metric': fmtInt(st.n('orders', 'total')), 'label': 'Total Orders', 'growth': _g('orders'), 'key': 'orders', 'color': const Color(0xFFF97316), 'icon': Icons.shopping_bag_rounded},
     ];
 
     return Container(
@@ -411,10 +423,10 @@ class ReportsOverviewView extends StatelessWidget {
                         titlesData: const FlTitlesData(show: false),
                         borderData: FlBorderData(show: false),
                         minY: 0,
-                        maxY: 10,
+                        maxY: top(st.series(p['key'] as String, 7), 1),
                         lineBarsData: [
                           LineChartBarData(
-                            spots: const [FlSpot(0, 3), FlSpot(1, 7), FlSpot(2, 4), FlSpot(3, 8), FlSpot(4, 5), FlSpot(5, 9)],
+                            spots: [for (final e in st.series(p['key'] as String, 7).asMap().entries) FlSpot(e.key.toDouble(), e.value)],
                             isCurved: true,
                             color: color,
                             barWidth: 2.0,

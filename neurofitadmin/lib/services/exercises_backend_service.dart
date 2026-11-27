@@ -187,6 +187,8 @@ class ExercisesBackendService extends ChangeNotifier {
 
   // Socket.IO Connection for Real-Time CRUD Updates
   void _initSocket() {
+    // Demo build: no live server to listen to.
+    if (ApiConstants.demoMode) return;
     try {
       final socketUrl = ApiConstants.baseUrl;
       _socket = IO.io(socketUrl, <String, dynamic>{

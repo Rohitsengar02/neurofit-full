@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'trainer_detail_bottom_sheet.dart';
+import 'net_or_asset_image.dart';
+import '../backend/admin_data.dart';
 
 class TrainersListView extends StatefulWidget {
   final String selectedDateRange;
@@ -24,143 +26,45 @@ class _TrainersListViewState extends State<TrainersListView> {
   String _searchQuery = '';
   bool _isGridView = false; // Toggle between beautiful rich list and grid
 
-  final List<String> _specialties = [
-    'All Specialties',
-    'Hypertrophy & Strength',
-    'Fat Loss & HIIT',
-    'Yoga & Mobility',
-    'Powerlifting',
-    'Calisthenics',
-  ];
+  List<String> get _specialties => ['All Specialties', ...{for (final t in _trainersList) '${t['category']}'}];
 
-  late List<Map<String, dynamic>> _trainersList;
+  List<Map<String, dynamic>> get _trainersList => AdminTrainers.I.withStatus('approved');
+
+  void _changed() { if (mounted) setState(() {}); }
 
   @override
   void initState() {
     super.initState();
+    AdminTrainers.I.addListener(_changed);
+    AdminTrainers.I.load();
+  }
 
-    _trainersList = [
-      {
-        'id': 'TR-101',
-        'name': 'Amit Sharma',
-        'specialty': 'Hypertrophy & Strength',
-        'tier': 'VIP Master Coach',
-        'tierColor': const Color(0xFFF59E0B),
-        'tierBg': const Color(0xFFFEF3C7),
-        'isPremium': true,
-        'rating': '4.95 ★',
-        'reviewsCount': '342 reviews',
-        'experience': '8+ Yrs Exp',
-        'certifications': 'ACE-CPT • CSCS • Precision Nutrition',
-        'clientsCount': 48,
-        'clientGrowth': '+6 this month',
-        'monthlyRevenue': '₹1,84,000 / mo',
-        'monthlyRate': '₹9,999 / mo',
-        'planRate': '₹3,499',
-        'callRate': '₹1,299',
-        'successRate': '94.2%',
-        'status': 'Online & Active',
-        'statusColor': const Color(0xFF10B981),
-        'img': 'assets/images/trainers_hero_banner.jpg',
-        'bio': 'Specialist in progressive overload barbell splits and competitive physique body transformations.',
-      },
-      {
-        'id': 'TR-102',
-        'name': 'Priya Patel',
-        'specialty': 'Fat Loss & HIIT',
-        'tier': 'Elite Coach',
-        'tierColor': const Color(0xFF8B5CF6),
-        'tierBg': const Color(0xFFF5F3FF),
-        'isPremium': true,
-        'rating': '4.90 ★',
-        'reviewsCount': '289 reviews',
-        'experience': '6+ Yrs Exp',
-        'certifications': 'ISSA Elite • Functional Movement Specialist',
-        'clientsCount': 42,
-        'clientGrowth': '+4 this month',
-        'monthlyRevenue': '₹1,48,000 / mo',
-        'monthlyRate': '₹7,999 / mo',
-        'planRate': '₹2,999',
-        'callRate': '₹1,199',
-        'successRate': '91.8%',
-        'status': 'Online',
-        'statusColor': const Color(0xFF10B981),
-        'img': 'assets/images/athlete_transform_1787825621309.jpg',
-        'bio': 'Metabolic conditioning, HIIT circuit training, and sustainable calorie deficit diet coaching.',
-      },
-      {
-        'id': 'TR-103',
-        'name': 'Dr. Vikram Seth',
-        'specialty': 'Powerlifting',
-        'tier': 'VIP Master Coach',
-        'tierColor': const Color(0xFFF59E0B),
-        'tierBg': const Color(0xFFFEF3C7),
-        'isPremium': true,
-        'rating': '4.98 ★',
-        'reviewsCount': '412 reviews',
-        'experience': '10+ Yrs Exp',
-        'certifications': 'CSCS • USAPL Senior National Coach',
-        'clientsCount': 52,
-        'clientGrowth': '+9 this month',
-        'monthlyRevenue': '₹2,10,000 / mo',
-        'monthlyRate': '₹12,499 / mo',
-        'planRate': '₹4,999',
-        'callRate': '₹1,899',
-        'successRate': '96.5%',
-        'status': 'Active',
-        'statusColor': const Color(0xFF10B981),
-        'img': 'assets/images/workout_banner_1.png',
-        'bio': 'Powerlifting mechanics, 1-Rep Max peaking, injury rehabilitation, and biomechanics coaching.',
-      },
-      {
-        'id': 'TR-104',
-        'name': 'Neha Singh',
-        'specialty': 'Yoga & Mobility',
-        'tier': 'Elite Coach',
-        'tierColor': const Color(0xFF8B5CF6),
-        'tierBg': const Color(0xFFF5F3FF),
-        'isPremium': true,
-        'rating': '4.92 ★',
-        'reviewsCount': '210 reviews',
-        'experience': '7+ Yrs Exp',
-        'certifications': 'Yoga Alliance RYT-500 • Pilates Master',
-        'clientsCount': 39,
-        'clientGrowth': '+3 this month',
-        'monthlyRevenue': '₹1,32,000 / mo',
-        'monthlyRate': '₹7,499 / mo',
-        'planRate': '₹2,799',
-        'callRate': '₹1,099',
-        'successRate': '93.0%',
-        'status': 'Online',
-        'statusColor': const Color(0xFF10B981),
-        'img': 'assets/images/hero_banner_1.png',
-        'bio': 'Postural correction, deep core strengthening, mindful mobility, and breathwork guidance.',
-      },
-      {
-        'id': 'TR-105',
-        'name': 'Rahul Verma',
-        'specialty': 'Hypertrophy & Strength',
-        'tier': 'Certified Trainer',
-        'tierColor': const Color(0xFF06B6D4),
-        'tierBg': const Color(0xFFECFEFF),
-        'isPremium': false,
-        'rating': '4.85 ★',
-        'reviewsCount': '164 reviews',
-        'experience': '5+ Yrs Exp',
-        'certifications': 'K11 CPT • Sports Nutritionist',
-        'clientsCount': 34,
-        'clientGrowth': '+5 this month',
-        'monthlyRevenue': '₹98,000 / mo',
-        'monthlyRate': '₹6,499 / mo',
-        'planRate': '₹2,499',
-        'callRate': '₹999',
-        'successRate': '89.4%',
-        'status': 'Active',
-        'statusColor': const Color(0xFF10B981),
-        'img': 'assets/images/hero_banner_4.png',
-        'bio': 'Custom muscle building splits, dumbbell compound mastery, and clean mass bulking.',
-      },
-    ];
+  @override
+  void dispose() {
+    AdminTrainers.I.removeListener(_changed);
+    super.dispose();
+  }
+
+  Future<void> _assign(Map<String, dynamic> t) async {
+    final ctrl = TextEditingController();
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Assign trainee to ${t['name']}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+        content: TextField(controller: ctrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(hintText: "Trainee's email")),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Assign')),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty) return;
+    try {
+      final who = await AdminTrainers.I.assign('${t['id']}', email);
+      if (mounted) _showSnackbar('$who assigned to ${t['name']}', const Color(0xFF06B6D4));
+    } catch (e) {
+      if (mounted) _showSnackbar('$e', const Color(0xFFEF4444));
+    }
   }
 
   Widget _buildAnimatedSection(int index, Widget child) {
@@ -202,11 +106,17 @@ class _TrainersListViewState extends State<TrainersListView> {
   }
 
   Widget _buildKpiCarousel() {
+    final all = _trainersList;
+    final vip = all.where((t) => t['isPremium'] == true).length;
+    final rev = all.fold<num>(0, (a, t) => a + (t['revenue30d'] as num? ?? 0));
+    final rated = all.where((t) => (t['reviews'] as num? ?? 0) > 0).toList();
+    final avgRating = rated.isEmpty ? 0.0 : rated.fold<double>(0, (a, t) => a + (t['rating'] is num ? (t['rating'] as num).toDouble() : double.tryParse('${t['rating']}'.split(' ').first) ?? 0)) / rated.length;
+    final newThisMonth = all.where((t) => DateTime.tryParse('${t['reviewedAt'] ?? ''}')?.isAfter(DateTime.now().subtract(const Duration(days: 30))) ?? false).length;
     final kpis = [
-      {'title': 'Total Coaches', 'val': '64 Active', 'growth': '+8 New this month', 'icon': Icons.sports_gymnastics_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
-      {'title': 'VIP Mentors', 'val': '24 Coaches', 'growth': 'Top tier certified', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
-      {'title': 'Avg Monthly Rev', 'val': '₹1.65L / coach', 'growth': '+22.4% payout', 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Client Rating', 'val': '4.92 ★', 'growth': '98% Positive reviews', 'icon': Icons.star_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Total Coaches', 'val': '${all.length} Active', 'growth': '+$newThisMonth New this month', 'icon': Icons.sports_gymnastics_rounded, 'color': const Color(0xFF06B6D4), 'bg': const Color(0xFFECFEFF)},
+      {'title': 'VIP Mentors', 'val': '$vip Coaches', 'growth': 'Marked VIP by admin', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFFF59E0B), 'bg': const Color(0xFFFFFBEB)},
+      {'title': 'Avg Monthly Rev', 'val': '${fmtInr(all.isEmpty ? 0 : rev / all.length)} / coach', 'growth': '${fmtInr(rev)} last 30 days', 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Client Rating', 'val': rated.isEmpty ? 'New' : '${avgRating.toStringAsFixed(2)} ★', 'growth': '${rated.fold<num>(0, (a, t) => a + (t['reviews'] as num? ?? 0))} reviews', 'icon': Icons.star_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
     ];
 
     return SingleChildScrollView(
@@ -317,9 +227,9 @@ class _TrainersListViewState extends State<TrainersListView> {
   Widget _buildTrainersFeed() {
     final filtered = _trainersList.where((t) {
       if (widget.viewMode == 'premium' && t['isPremium'] != true) return false;
-      if (_selectedFilterIndex > 0) {
+      if (_selectedFilterIndex > 0 && _selectedFilterIndex < _specialties.length) {
         final spec = _specialties[_selectedFilterIndex];
-        if (t['specialty'] != spec) return false;
+        if (t['category'] != spec) return false;
       }
       if (_searchQuery.isEmpty) return true;
       final q = _searchQuery.toLowerCase();
@@ -396,7 +306,7 @@ class _TrainersListViewState extends State<TrainersListView> {
                         border: Border.all(color: isVip ? Colors.amber.shade400 : Colors.grey.shade200, width: 2),
                       ),
                       child: ClipOval(
-                        child: Image.asset(
+                        child: NetOrAssetImage(
                           t['img'] as String,
                           fit: BoxFit.cover,
                           errorBuilder: (c, e, s) => const Icon(Icons.person, size: 30),
@@ -529,7 +439,7 @@ class _TrainersListViewState extends State<TrainersListView> {
                 Row(
                   children: [
                     _buildCardActionBtn('Assign', Icons.person_add_alt_1_rounded, const Color(0xFF06B6D4), () {
-                      _showSnackbar('Assign trainee to ${t['name']}', const Color(0xFF06B6D4));
+                      _assign(t);
                     }),
                     const SizedBox(width: 6),
                     _buildCardActionBtn('View Profile', Icons.arrow_forward_rounded, const Color(0xFF0F172A), () {
@@ -561,7 +471,7 @@ class _TrainersListViewState extends State<TrainersListView> {
         children: [
           Row(
             children: [
-              CircleAvatar(radius: 20, backgroundImage: AssetImage(t['img'] as String)),
+              CircleAvatar(radius: 20, backgroundColor: const Color(0xFFE2E8F0), backgroundImage: '${t['img']}'.startsWith('http') ? NetworkImage(t['img'] as String) : null, child: '${t['img']}'.startsWith('http') ? null : const Icon(Icons.person, size: 20, color: Color(0xFF64748B))),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(

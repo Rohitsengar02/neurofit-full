@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../backend/admin_data.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-class RevenueAnalyticsView extends StatelessWidget {
+class RevenueAnalyticsView extends StatefulWidget {
   final String selectedDateRange;
   final List<Animation<double>> fadeAnimations;
   final List<Animation<Offset>> slideAnimations;
@@ -12,6 +13,25 @@ class RevenueAnalyticsView extends StatelessWidget {
     required this.fadeAnimations,
     required this.slideAnimations,
   });
+
+  @override
+  State<RevenueAnalyticsView> createState() => _RevenueAnalyticsViewState();
+}
+
+class _RevenueAnalyticsViewState extends State<RevenueAnalyticsView> with LiveStats {
+  String get selectedDateRange => widget.selectedDateRange;
+  List<Animation<double>> get fadeAnimations => widget.fadeAnimations;
+  List<Animation<Offset>> get slideAnimations => widget.slideAnimations;
+
+  double _r(String k) => ins.n('revenue', k).toDouble();
+  double get _week => _r('week');
+  double get _wkGrowth => _r('prev_week') == 0 ? (_week > 0 ? 100 : 0) : (_week - _r('prev_week')) / _r('prev_week') * 100;
+  List<double> get _daily7 => ins.series('revenue', 'daily', 7);
+  double get _dayMax => top(_daily7, 1000);
+  List<Map<String, dynamic>> get _pm => ins.list('revenue', 'paymentMethods');
+  double get _pmTotal => _pm.fold<double>(0, (a, r) => a + ((r['amount'] as num?) ?? 0).toDouble());
+  double get _pmOther => _pmTotal - ['UPI', 'Card', 'Cash on Delivery', 'Wallet'].fold<double>(0, (a, l) => a + pick(_pm, l));
+  double _ut(String label) => pick(ins.list('revenue', 'byUserType'), label);
 
   Widget _buildAnimatedSection(int index, Widget child) {
     final int safeIndex = index < fadeAnimations.length ? index : fadeAnimations.length - 1;
@@ -181,9 +201,9 @@ class RevenueAnalyticsView extends StatelessWidget {
                     physics: const BouncingScrollPhysics(),
                     child: Row(
                       children: [
-                        _buildHeroStat('₹24,58,300', 'Total Revenue (↑21.7%)', const Color(0xFF10B981)),
+                        _buildHeroStat(fmtInr(_week), 'Revenue this week (${_wkGrowth >= 0 ? '↑' : '↓'}${_wkGrowth.abs().toStringAsFixed(1)}%)', const Color(0xFF10B981)),
                         const SizedBox(width: 14),
-                        _buildHeroStat('₹3,25,450', 'Avg. Daily Revenue', const Color(0xFF3B82F6)),
+                        _buildHeroStat(fmtInr(_week / 7), 'Avg. Daily Revenue', const Color(0xFF3B82F6)),
                       ],
                     ),
                   ),
@@ -235,10 +255,10 @@ class RevenueAnalyticsView extends StatelessWidget {
   // 2. TOP 4 KPI CARDS
   Widget _buildTopKpisSection() {
     final kpis = [
-      {'title': 'Total Revenue', 'val': '₹24,58,300', 'growth': '21.7%', 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
-      {'title': 'Subscription', 'val': '₹12,45,800', 'growth': '18.6%', 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
-      {'title': 'Market Revenue', 'val': '₹10,12,500', 'growth': '25.2%', 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
-      {'title': 'Other Revenue', 'val': '₹2,00,000', 'growth': '12.8%', 'icon': Icons.credit_card_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
+      {'title': 'Total Revenue', 'val': fmtInr(_r('total')), 'growth': fmtPct(_wkGrowth), 'icon': Icons.account_balance_wallet_rounded, 'color': const Color(0xFF10B981), 'bg': const Color(0xFFECFDF5)},
+      {'title': 'Subscription', 'val': fmtInr(_r('subs')), 'growth': share(_r('subs'), _r('total')), 'icon': Icons.workspace_premium_rounded, 'color': const Color(0xFF8B5CF6), 'bg': const Color(0xFFF5F3FF)},
+      {'title': 'Market Revenue', 'val': fmtInr(_r('market')), 'growth': share(_r('market'), _r('total')), 'icon': Icons.shopping_bag_rounded, 'color': const Color(0xFFF97316), 'bg': const Color(0xFFFFF7ED)},
+      {'title': 'This Month', 'val': fmtInr(_r('month')), 'growth': 'since the 1st', 'icon': Icons.credit_card_rounded, 'color': const Color(0xFF3B82F6), 'bg': const Color(0xFFEFF6FF)},
     ];
 
     return GridView.builder(
@@ -313,13 +333,13 @@ class RevenueAnalyticsView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹24,58,300', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(_week), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
           Row(
-            children: const [
-              Icon(Icons.north_east_rounded, size: 11, color: Color(0xFF10B981)),
-              SizedBox(width: 3),
-              Text('21.7% vs last 7 days', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+            children: [
+              Icon(_wkGrowth >= 0 ? Icons.north_east_rounded : Icons.south_east_rounded, size: 11, color: const Color(0xFF10B981)),
+              const SizedBox(width: 3),
+              Text('${fmtPct(_wkGrowth.abs())} vs last 7 days', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
             ],
           ),
           const SizedBox(height: 16),
@@ -327,15 +347,15 @@ class RevenueAnalyticsView extends StatelessWidget {
             height: 170,
             child: LineChart(
               LineChartData(
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: _dayMax / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 100, getTitlesWidget: (v, meta) => Text('${v.toInt()}K', style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 32, interval: _dayMax / 4, getTitlesWidget: (v, meta) => Text(fmtInrShort(v).replaceAll('₹', ''), style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5)))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
                       getTitlesWidget: (v, meta) {
-                        final days = ['May 20', 'May 21', 'May 22', 'May 23', 'May 24', 'May 25', 'May 26'];
+                        final days = dayLabels(7);
                         final i = v.toInt();
                         if (i >= 0 && i < days.length) {
                           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(days[i], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 8.5, fontWeight: FontWeight.w600)));
@@ -351,10 +371,10 @@ class RevenueAnalyticsView extends StatelessWidget {
                 minX: 0,
                 maxX: 6,
                 minY: 0,
-                maxY: 550,
+                maxY: _dayMax,
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [FlSpot(0, 210), FlSpot(1, 310), FlSpot(2, 380), FlSpot(3, 490), FlSpot(4, 320), FlSpot(5, 420), FlSpot(6, 520)],
+                    spots: [for (var i = 0; i < _daily7.length; i++) FlSpot(i.toDouble(), _daily7[i])],
                     isCurved: true,
                     curveSmoothness: 0.35,
                     color: const Color(0xFF10B981),
@@ -407,17 +427,17 @@ class RevenueAnalyticsView extends StatelessWidget {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 50.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 41.2, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 8.1, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _r('subs') + (_r('total') == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _r('market'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 0, radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('₹24.58L', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Rev', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInrShort(_r('total')), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Rev', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -427,11 +447,11 @@ class RevenueAnalyticsView extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Subscriptions', '50.7% (₹12.45L)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Subscriptions', '${share(_r('subs'), _r('total'))} (${fmtInrShort(_r('subs'))})'),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Orders', '41.2% (₹10.12L)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Orders', '${share(_r('market'), _r('total'))} (${fmtInrShort(_r('market'))})'),
                     const SizedBox(height: 10),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other', '8.1% (₹2.00L)'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Other', '0.0% (₹0)'),
                   ],
                 ),
               ),
@@ -444,12 +464,11 @@ class RevenueAnalyticsView extends StatelessWidget {
 
   // 4. REVENUE BY PLAN
   Widget _buildRevenueByPlanSection() {
+    const planColors = [Color(0xFFF59E0B), Color(0xFF3B82F6), Color(0xFF10B981), Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFEC4899)];
+    final planRows = ins.list('revenue', 'plans');
     final plans = [
-      {'title': 'Premium Monthly', 'rev': '₹4,75,500', 'growth': '+18.4%', 'color': const Color(0xFFF59E0B)},
-      {'title': 'Premium Quarterly', 'rev': '₹3,94,800', 'growth': '+14.7%', 'color': const Color(0xFF3B82F6)},
-      {'title': 'Premium Yearly', 'rev': '₹2,25,000', 'growth': '+22.1%', 'color': const Color(0xFF10B981)},
-      {'title': 'Trainer Pro Plan', 'rev': '₹1,20,500', 'growth': '+11.2%', 'color': const Color(0xFF06B6D4)},
-      {'title': 'Other Plans', 'rev': '₹30,000', 'growth': '+8.3%', 'color': const Color(0xFF8B5CF6)},
+      for (var i = 0; i < planRows.length; i++)
+        {'title': '${planRows[i]['label']} coaching', 'rev': fmtInr(planRows[i]['amount'] as num? ?? 0), 'growth': '${planRows[i]['n']} sold', 'color': planColors[i % planColors.length]},
     ];
 
     return Container(
@@ -501,8 +520,8 @@ class RevenueAnalyticsView extends StatelessWidget {
 
   // 4. DAILY REVENUE TREND
   Widget _buildDailyRevenueTrendSection() {
-    final days = ['20', '21', '22', '23', '24', '25', '26'];
-    final revenues = [210.0, 310.0, 380.0, 490.0, 320.0, 420.0, 520.0];
+    final days = [for (final d in dayLabels(7)) d.split(' ').last];
+    final revenues = _daily7;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -518,14 +537,14 @@ class RevenueAnalyticsView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹24,58,300', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(_week), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 16),
           SizedBox(
             height: 170,
             child: BarChart(
               BarChartData(
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 100, getTitlesWidget: (v, meta) => Text('${v.toInt()}K', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 32, interval: _dayMax / 4, getTitlesWidget: (v, meta) => Text(fmtInrShort(v).replaceAll('₹', ''), style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -543,6 +562,7 @@ class RevenueAnalyticsView extends StatelessWidget {
                 ),
                 gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 borderData: FlBorderData(show: false),
+                maxY: _dayMax,
                 barGroups: List.generate(days.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: revenues[i], color: i == 6 ? const Color(0xFF65D300) : const Color(0xFF86EFAC), width: 16, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))])),
               ),
             ),
@@ -576,19 +596,19 @@ class RevenueAnalyticsView extends StatelessWidget {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 54.8, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 26.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 10.7, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 5.8, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF06B6D4), value: 2.0, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: pick(_pm, 'UPI') + (_pmTotal == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: pick(_pm, 'Card'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF59E0B), value: pick(_pm, 'Cash on Delivery'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: pick(_pm, 'Wallet'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF06B6D4), value: _pmOther, radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('₹24.58L', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Rev', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInrShort(_r('total')), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Rev', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -598,15 +618,15 @@ class RevenueAnalyticsView extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'UPI', '54.8%'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'UPI', share(pick(_pm, 'UPI'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Card', '26.7%'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Card', share(pick(_pm, 'Card'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF59E0B), 'Net Banking', '10.7%'),
+                    _buildDemographicRow(const Color(0xFFF59E0B), 'Cash on Delivery', share(pick(_pm, 'Cash on Delivery'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Wallet', '5.8%'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Wallet', share(pick(_pm, 'Wallet'), _pmTotal)),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF06B6D4), 'Other', '2.0%'),
+                    _buildDemographicRow(const Color(0xFF06B6D4), 'Other', share(_pmOther, _pmTotal)),
                   ],
                 ),
               ),
@@ -619,9 +639,14 @@ class RevenueAnalyticsView extends StatelessWidget {
 
   // 5. MONTHLY REVENUE COMPARISON
   Widget _buildMonthlyRevenueComparisonSection() {
-    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-    final thisYear = [18.0, 24.0, 29.0, 36.0, 42.0, 48.0];
-    final lastYear = [12.0, 16.0, 21.0, 26.0, 31.0, 35.0];
+    const mn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final monthly = ins.list('revenue', 'monthly');
+    final last6 = monthly.length > 6 ? monthly.sublist(monthly.length - 6) : monthly;
+    final months = [for (final m in last6) mn[int.parse('${m['month']}'.split('-')[1]) - 1]];
+    // grey bar = marketplace, green bar = total (marketplace + coaching), in lakhs
+    final lastYear = [for (final m in last6) ((m['market'] as num? ?? 0) / 1e5).toDouble()];
+    final thisYear = [for (final m in last6) ((m['value'] as num? ?? 0) / 1e5).toDouble()];
+    final mMax = top([...thisYear, ...lastYear], 0.1);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -637,16 +662,16 @@ class RevenueAnalyticsView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('₹2,45,82,600', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+          Text(fmtInr(_r('year')), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
           const SizedBox(height: 2),
-          const Text('↑ 32.4% vs last year', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+          Text('${fmtInr(_r('month'))} this month', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
           const SizedBox(height: 16),
           SizedBox(
             height: 170,
             child: BarChart(
               BarChartData(
                 titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: 10, getTitlesWidget: (v, meta) => Text('${v.toInt()}L', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28, interval: mMax / 4, getTitlesWidget: (v, meta) => Text('${v.toStringAsFixed(mMax < 4 ? 1 : 0)}L', style: const TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8))))),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -662,8 +687,9 @@ class RevenueAnalyticsView extends StatelessWidget {
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 10, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: mMax / 4, getDrawingHorizontalLine: (v) => FlLine(color: const Color(0xFFF1F5F9), strokeWidth: 1)),
                 borderData: FlBorderData(show: false),
+                maxY: mMax,
                 barGroups: List.generate(months.length, (i) => BarChartGroupData(x: i, barRods: [
                   BarChartRodData(toY: lastYear[i], color: const Color(0xFFE2E8F0), width: 8, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
                   BarChartRodData(toY: thisYear[i], color: const Color(0xFF65D300), width: 8, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
@@ -700,18 +726,18 @@ class RevenueAnalyticsView extends StatelessWidget {
                         sectionsSpace: 3,
                         centerSpaceRadius: 36,
                         sections: [
-                          PieChartSectionData(color: const Color(0xFF10B981), value: 52.8, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF3B82F6), value: 28.5, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFFF59E0B), value: 13.2, radius: 24, title: ''),
-                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: 5.5, radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF10B981), value: _ut('Premium') + (_r('total') == 0 ? 1 : 0), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF3B82F6), value: _ut('Free users'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFFF59E0B), value: _ut('Coaches'), radius: 24, title: ''),
+                          PieChartSectionData(color: const Color(0xFF8B5CF6), value: _r('subs'), radius: 24, title: ''),
                         ],
                       ),
                     ),
                     Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('₹24.58L', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                        Text('Total Rev', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
+                      children: [
+                        Text(fmtInrShort(_r('total')), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        const Text('Total Rev', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8))),
                       ],
                     ),
                   ],
@@ -721,13 +747,13 @@ class RevenueAnalyticsView extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
-                    _buildDemographicRow(const Color(0xFF10B981), 'Pro Users', '52.8% (₹12.98L)'),
+                    _buildDemographicRow(const Color(0xFF10B981), 'Premium Users', '${share(_ut('Premium'), _r('total'))} (${fmtInrShort(_ut('Premium'))})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF3B82F6), 'Premium Users', '28.5% (₹7.01L)'),
+                    _buildDemographicRow(const Color(0xFF3B82F6), 'Free Users', '${share(_ut('Free users'), _r('total'))} (${fmtInrShort(_ut('Free users'))})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFFF59E0B), 'Trainers', '13.2% (₹3.25L)'),
+                    _buildDemographicRow(const Color(0xFFF59E0B), 'Trainers', '${share(_ut('Coaches'), _r('total'))} (${fmtInrShort(_ut('Coaches'))})'),
                     const SizedBox(height: 8),
-                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Others', '5.5% (₹1.35L)'),
+                    _buildDemographicRow(const Color(0xFF8B5CF6), 'Coaching plans', '${share(_r('subs'), _r('total'))} (${fmtInrShort(_r('subs'))})'),
                   ],
                 ),
               ),
@@ -740,12 +766,14 @@ class RevenueAnalyticsView extends StatelessWidget {
 
   // 6. TOP REVENUE PRODUCTS / SERVICES
   Widget _buildTopRevenueProductsSection() {
+    const pColors = [Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFFF59E0B), Color(0xFF8B5CF6), Color(0xFF06B6D4)];
+    final merged = [
+      for (final p in st.rows('topProducts')) {'title': '${p['name'] ?? 'Product'}', 'amount': (p['revenue'] as num? ?? 0), 'growth': '${p['qty'] ?? 0} sold'},
+      for (final p in ins.list('revenue', 'plans')) {'title': '${p['label']} coaching', 'amount': (p['amount'] as num? ?? 0), 'growth': '${p['n'] ?? 0} sold'},
+    ]..sort((a, b) => (b['amount'] as num).compareTo(a['amount'] as num));
     final products = [
-      {'title': 'Premium Mentorship Plan', 'rev': '₹4,75,500', 'growth': '+18.4%', 'color': const Color(0xFF10B981)},
-      {'title': 'Whey Protein Isolate 1kg', 'rev': '₹3,21,200', 'growth': '+22.6%', 'color': const Color(0xFF3B82F6)},
-      {'title': 'Trainer Pro Plan', 'rev': '₹1,20,500', 'growth': '+11.2%', 'color': const Color(0xFFF59E0B)},
-      {'title': 'Personal Training Session', 'rev': '₹75,000', 'growth': '+8.4%', 'color': const Color(0xFF8B5CF6)},
-      {'title': 'Nutrition Plan', 'rev': '₹52,500', 'growth': '+6.8%', 'color': const Color(0xFF06B6D4)},
+      for (var i = 0; i < merged.length && i < 5; i++)
+        {'title': merged[i]['title'], 'rev': fmtInr(merged[i]['amount'] as num), 'growth': merged[i]['growth'], 'color': pColors[i]},
     ];
 
     return Container(
@@ -792,11 +820,19 @@ class RevenueAnalyticsView extends StatelessWidget {
   // 7. RECENT TRANSACTIONS
   Widget _buildRecentTransactionsSection() {
     final txns = [
-      {'id': '#TXN-8762', 'desc': 'Premium Monthly Plan', 'amount': '₹2,499', 'status': 'Success', 'date': 'May 26, 2025', 'color': const Color(0xFF10B981)},
-      {'id': '#TXN-8761', 'desc': 'Whey Protein Isolate', 'amount': '₹2,499', 'status': 'Success', 'date': 'May 26, 2025', 'color': const Color(0xFF10B981)},
-      {'id': '#TXN-8760', 'desc': 'Trainer Pro Plan', 'amount': '₹3,999', 'status': 'Success', 'date': 'May 25, 2025', 'color': const Color(0xFF10B981)},
-      {'id': '#TXN-8759', 'desc': 'Refund: Order #ORD-8712', 'amount': '-₹1,200', 'status': 'Refunded', 'date': 'May 25, 2025', 'color': const Color(0xFFF97316)},
-      {'id': '#TXN-8758', 'desc': 'Nutrition Plan', 'amount': '₹1,199', 'status': 'Success', 'date': 'May 25, 2025', 'color': const Color(0xFF10B981)},
+      for (final t in ins.list('revenue', 'transactions'))
+        () {
+          final bad = t['status'] == 'Cancelled' || t['status'] == 'Returned' || t['status'] == 'cancelled';
+          final id = '${t['id']}';
+          return {
+            'id': '#${id.length > 6 ? id.substring(id.length - 6).toUpperCase() : id}',
+            'desc': '${t['title']}',
+            'amount': '${bad ? '-' : ''}${fmtInr(t['amount'] as num? ?? 0)}',
+            'status': bad ? (t['status'] == 'Returned' ? 'Refunded' : 'Cancelled') : ('${t['payment']}'.toLowerCase() == 'paid' ? 'Success' : 'Pending'),
+            'date': shortDate(t['at']?.toString()),
+            'color': bad ? const Color(0xFFF97316) : const Color(0xFF10B981),
+          };
+        }(),
     ];
 
     return Container(
@@ -854,11 +890,11 @@ class RevenueAnalyticsView extends StatelessWidget {
   // 7. REVENUE SUMMARY
   Widget _buildRevenueSummarySection() {
     final summaries = [
-      {'title': 'Today\'s Revenue', 'val': '₹3,25,450', 'growth': '+18.4%', 'color': const Color(0xFFF59E0B), 'icon': Icons.today_rounded},
-      {'title': 'This Week\'s Revenue', 'val': '₹24,58,300', 'growth': '+21.7%', 'color': const Color(0xFF8B5CF6), 'icon': Icons.date_range_rounded},
-      {'title': 'This Month\'s Revenue', 'val': '₹1,05,72,500', 'growth': '+19.8%', 'color': const Color(0xFF3B82F6), 'icon': Icons.calendar_month_rounded},
-      {'title': 'This Year\'s Revenue', 'val': '₹2,45,82,600', 'growth': '+32.4%', 'color': const Color(0xFF10B981), 'icon': Icons.event_note_rounded},
-      {'title': 'All-Time Revenue', 'val': '₹10,50,00,000', 'growth': 'Lifetime', 'color': const Color(0xFFEC4899), 'icon': Icons.all_inclusive_rounded},
+      {'title': 'Today\'s Revenue', 'val': fmtInr(_r('today')), 'growth': 'since midnight', 'color': const Color(0xFFF59E0B), 'icon': Icons.today_rounded},
+      {'title': 'This Week\'s Revenue', 'val': fmtInr(_week), 'growth': '${_wkGrowth >= 0 ? '+' : ''}${_wkGrowth.toStringAsFixed(1)}%', 'color': const Color(0xFF8B5CF6), 'icon': Icons.date_range_rounded},
+      {'title': 'This Month\'s Revenue', 'val': fmtInr(_r('month')), 'growth': 'month to date', 'color': const Color(0xFF3B82F6), 'icon': Icons.calendar_month_rounded},
+      {'title': 'This Year\'s Revenue', 'val': fmtInr(_r('year')), 'growth': 'year to date', 'color': const Color(0xFF10B981), 'icon': Icons.event_note_rounded},
+      {'title': 'All-Time Revenue', 'val': fmtInr(_r('total')), 'growth': 'Lifetime', 'color': const Color(0xFFEC4899), 'icon': Icons.all_inclusive_rounded},
     ];
 
     return Container(

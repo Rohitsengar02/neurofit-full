@@ -274,7 +274,7 @@ class _FitnessWorkoutLayoutViewState extends State<FitnessWorkoutLayoutView> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Use Up/Down arrows to reorder sections. Updates sync to MongoDB Atlas in real-time.',
+                      'Use Up/Down arrows to reorder sections. Changes show up right away.',
                       style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
                     ),
                   ),
