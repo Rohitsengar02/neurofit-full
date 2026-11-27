@@ -61,14 +61,23 @@ router.post('/login', async (req, res) => {
 
 router.post('/google', async (req, res) => {
   const idToken = req.body.idToken || req.body.id_token;
-  if (!idToken) return res.status(400).json({ success: false, message: 'Missing Google token.' });
+  const accessToken = req.body.accessToken || req.body.access_token;
+  if (!idToken && !accessToken) return res.status(400).json({ success: false, message: 'Missing Google token.' });
   if (!config.googleClientIds.length) {
     return res.status(503).json({ success: false, code: 'google_not_configured', message: 'Google sign-in is not set up on the server yet.' });
   }
   let p;
   try {
-    const ticket = await google.verifyIdToken({ idToken, audience: config.googleClientIds });
-    p = ticket.getPayload();
+    if (idToken) {
+      const ticket = await google.verifyIdToken({ idToken, audience: config.googleClientIds });
+      p = ticket.getPayload();
+    } else {
+      // Web sign-in may only give an access token: check it was issued to our app, then read the profile.
+      const info = await (await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`)).json();
+      if (!config.googleClientIds.includes(info.aud || info.azp)) throw new Error('wrong audience');
+      p = await (await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+      if (!p.sub) throw new Error('no profile');
+    }
   } catch (e) {
     return res.status(401).json({ success: false, message: 'Google sign-in could not be verified.' });
   }

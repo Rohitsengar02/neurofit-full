@@ -5,8 +5,6 @@ import 'screens/splash_screen.dart';
 import 'screens/admin_login_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:http/http.dart' as http;
-import 'constants/api_constants.dart';
-import 'demo/demo_backend.dart';
 import 'backend/live_backend.dart';
 
 void main() {
@@ -19,15 +17,9 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
-  if (ApiConstants.demoMode) {
-    // Answer every backend, MongoDB and Firestore call inside the app.
-    final realClient = http.Client();
-    http.runWithClient(() => runApp(const NeuroFitAdminApp()), () => DemoBackendClient(realClient));
-  } else {
-    // Every call goes to the NeuroFit API with the admin's token.
-    final realClient = http.Client();
-    http.runWithClient(() => runApp(const NeuroFitAdminApp()), () => LiveBackendClient(realClient));
-  }
+  // Every call goes to the NeuroFit API with the admin's token.
+  final realClient = http.Client();
+  http.runWithClient(() => runApp(const NeuroFitAdminApp()), () => LiveBackendClient(realClient));
 }
 
 final GlobalKey<NavigatorState> adminNavKey = GlobalKey<NavigatorState>();

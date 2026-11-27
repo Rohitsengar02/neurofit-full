@@ -14,10 +14,10 @@ const cache = require('../lib/cache');
 
 const router = express.Router();
 const r2 = config.r2;
-const configured = () => !!(r2.accountId && r2.accessKeyId && r2.secretAccessKey && r2.bucket);
+const configured = () => !!((r2.endpoint || r2.accountId) && r2.accessKeyId && r2.secretAccessKey && r2.bucket);
 let client = null;
 const s3 = () => client || (client = new S3Client({
-  region: 'auto', endpoint: `https://${r2.accountId}.r2.cloudflarestorage.com`,
+  region: 'auto', endpoint: r2.endpoint || `https://${r2.accountId}.r2.cloudflarestorage.com`,
   credentials: { accessKeyId: r2.accessKeyId, secretAccessKey: r2.secretAccessKey },
 }));
 

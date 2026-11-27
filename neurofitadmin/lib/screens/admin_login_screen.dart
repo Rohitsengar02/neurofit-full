@@ -31,15 +31,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
   void _autoFillAdminCredentials() async {
     HapticFeedback.mediumImpact();
-    if (ApiConstants.demoMode) {
-      _emailController.text = ApiConstants.demoAdminEmail;
-      _passwordController.text = ApiConstants.demoAdminPassword;
-    } else {
-      // Live build: fill the last admin email used on this device.
-      final last = await AdminSession.lastEmail();
-      if (last.isEmpty) return;
-      _emailController.text = last;
-    }
+    // Fill the last admin email used on this device.
+    final last = await AdminSession.lastEmail();
+    if (last.isEmpty) return;
+    _emailController.text = last;
     if (!mounted) return;
     setState(() {
       _errorMessage = null;
@@ -52,7 +47,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             const Icon(Icons.bolt_rounded, color: Color(0xFF22C55E), size: 20),
             const SizedBox(width: 10),
             Text(
-              ApiConstants.demoMode ? 'Demo admin credentials filled in' : 'Last admin email filled in',
+              'Last admin email filled in',
               style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
             ),
           ],
@@ -64,12 +59,6 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<bool> _verifyAdminWithBackend(String email, String password) async {
-    if (ApiConstants.demoMode) {
-      // Demo build: no backend or database. Only the demo admin can sign in.
-      return email.trim().toLowerCase() == ApiConstants.demoAdminEmail &&
-          password == ApiConstants.demoAdminPassword;
-    }
-
     try {
       // Generous timeout: a sleeping free server needs up to ~50 s to wake.
       final res = await http.post(
@@ -206,9 +195,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          ApiConstants.demoMode
-                              ? 'Demo mode · sample data, nothing is saved'
-                              : 'MongoDB Atlas Enterprise Command Center',
+                          'NeuroFit Admin Command Center',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,

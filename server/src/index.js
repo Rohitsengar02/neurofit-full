@@ -50,7 +50,7 @@ app.get('/api/config', (_req, res) => res.json({
   success: true,
   googleClientId: config.googleClientIds[0] || null,
   liveEnabled: !!(config.livekit.url && config.livekit.apiKey),
-  uploadsEnabled: !!(config.r2.accountId && config.r2.accessKeyId),
+  uploadsEnabled: !!((config.r2.endpoint || config.r2.accountId) && config.r2.accessKeyId),
   r2PublicUrl: config.r2.publicUrl || null,
 }));
 
